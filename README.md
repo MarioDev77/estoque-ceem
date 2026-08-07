@@ -51,12 +51,23 @@ Sistema completo, profissional e responsivo para o gerenciamento da alimentaçã
 ```bash
 # 1. Instalar dependências (server + client)
 npm run setup
-
-# 2. Banco de dados com dados de demonstração (opcional — já incluso ao iniciar)
-npm run seed
 ```
 
-> Se o banco já estiver populado e quiser recriar do zero:
+> O sistema **inicia zerado** — sem dados fictícios. O banco é criado automaticamente
+> com a estrutura completa (papéis, permissões, tipos de refeição, categorias) e o
+> usuário administrador, para você ir preenchendo conforme o uso real.
+
+### Zerar o banco (opcional)
+
+Se precisar remover todos os dados e começar do zero novamente:
+
+```bash
+# Remove todos os dados (alimentos, estoque, refeições, compras, financeiro, etc.)
+# Mantém a estrutura, papéis, permissões e o usuário administrador
+npm --prefix server run clean
+```
+
+> Para recriar os dados de demonstração (apenas para testes), existe:
 > ```bash
 > npm --prefix server run seed -- --force
 > ```
@@ -73,14 +84,12 @@ npm run dev:client
 # → http://localhost:5173
 ```
 
-### Acessos de demonstração
 
-| Perfil | E-mail | Senha |
 |---|---|---|
 | Administrador | admin@escola.edu.br | admin123 |
 | Nutrição | nutricao@escola.edu.br | nutricao123 |
 | Cantina | cantina@escola.edu.br | cantina123 |
-| Direção | direcao@escola.edu.br | direcao123 |
+| Direção | direcao@escola.edu.br | direcao123 | P|
 
 ---
 
