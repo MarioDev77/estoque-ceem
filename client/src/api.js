@@ -37,3 +37,4 @@ export function getErrMsg(err, fallback = 'Erro ao processar a requisição.') {
 }
 
 export default api;
+
