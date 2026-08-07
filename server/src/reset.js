@@ -63,6 +63,11 @@ const TABLES_TO_CLEAR = [
 
 console.log('🧹 Limpando dados fictícios...');
 
+// Desliga a checagem de foreign keys durante a limpeza (precisa ser fora de uma
+// transação — o SQLite não permite mudar esse pragma dentro de BEGIN/COMMIT).
+// Isso evita falhas de ordem entre tabelas por causa de dados reais criados
+// depois do seed original (ex: uso real do sistema, tentativas de login, etc).
+db.exec('PRAGMA foreign_keys = OFF;');
 db.exec('BEGIN');
 try {
   for (const table of TABLES_TO_CLEAR) {
@@ -79,8 +84,10 @@ try {
   );
 
   db.exec('COMMIT');
+  db.exec('PRAGMA foreign_keys = ON;');
 } catch (err) {
   db.exec('ROLLBACK');
+  db.exec('PRAGMA foreign_keys = ON;');
   console.error('❌ Erro ao resetar banco:', err.message);
   process.exit(1);
 }
