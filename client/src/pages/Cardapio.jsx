@@ -21,7 +21,8 @@ export default function Cardapio() {
   const [openPlan, setOpenPlan] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState({ date: today(), meals: [{ meal_type_id: '2', title: 'Almoço', description: '', expected_students: 750, items: [] }] });
-  const [planForm, setPlanForm] = useState({ start: today(), end: addDays(today(), 14), recipe_id: '', meal_type_id: '2', students: 750 });
+  const [planForm, setPlanForm] = useState({ start: today(), end: addDays(today(), 14), recipe_name: '', meal_type_id: '2', students: 750, description: '' });
+  const [recipes, setRecipes] = useState([]);
 
   const { year, month } = currentMonth;
 
@@ -29,9 +30,10 @@ export default function Cardapio() {
     try {
       const res = await api.get('/cardapios/mes', { params: { year, month } });
       setData(res.data);
-      const [fRes, mtRes] = await Promise.all([api.get('/alimentos'), api.get('/tipos-refeicao')]);
+      const [fRes, mtRes, rRes] = await Promise.all([api.get('/alimentos'), api.get('/tipos-refeicao'), api.get('/fichas').catch(() => ({ data: [] }))]);
       setFoods(fRes.data);
       setMealTypes(mtRes.data);
+      setRecipes(rRes.data || []);
     } catch (err) {
       setError(getErrMsg(err, 'Erro ao carregar cardápio.'));
     }
@@ -143,7 +145,21 @@ export default function Cardapio() {
     e.preventDefault();
     setError('');
     try {
-      const res = await api.post('/cardapios/planejar', planForm);
+      const typed = (planForm.recipe_name || '').trim();
+      const matched = recipes.find((r) => r.name.toLowerCase() === typed.toLowerCase());
+      const payload = {
+        start: planForm.start,
+        end: planForm.end,
+        meal_type_id: planForm.meal_type_id,
+        students: planForm.students,
+      };
+      if (matched) {
+        payload.recipe_id = matched.id;
+      } else {
+        payload.title = typed;
+        payload.description = planForm.description || typed;
+      }
+      const res = await api.post('/cardapios/planejar', payload);
       alert(`Cardápio planejado para ${res.data.created} dias letivos!`);
       setOpenPlan(false);
       load();
@@ -164,7 +180,7 @@ export default function Cardapio() {
         subtitle="Planejamento diário, semanal e mensal das refeições"
         actions={
           <div className="row-actions">
-            <button className="btn btn-outline" onClick={() => { setPlanForm({ ...planForm, start: today(), end: addDays(today(), 14) }); setOpenPlan(true); }}><CalendarRange size={16} /> Planejar período</button>
+            <button className="btn btn-outline" onClick={() => { setPlanForm({ ...planForm, start: today(), end: addDays(today(), 14), recipe_name: '', description: '' }); setOpenPlan(true); }}><CalendarRange size={16} /> Planejar período</button>
             {can('cardapio', 'can_create') && <button className="btn btn-primary" onClick={() => openNewDay(new Date().getDate())}><Plus size={16} /> Novo dia</button>}
           </div>
         }
@@ -299,11 +315,28 @@ export default function Cardapio() {
           <label>Data final
             <input className="input" type="date" value={planForm.end} onChange={(e) => setPlanForm({ ...planForm, end: e.target.value })} required />
           </label>
-          <label>Ficha técnica (refeição)
-            <select className="input" value={planForm.recipe_id} onChange={(e) => setPlanForm({ ...planForm, recipe_id: e.target.value })} required>
-              <option value="">Selecione…</option>
-              {data.menus.length >= 0 && <option value="1">Arroz com frango</option>}
-            </select>
+          <label className="full">Ficha técnica (refeição)
+            <input
+              className="input"
+              list="fichas-list"
+              value={planForm.recipe_name}
+              onChange={(e) => setPlanForm({ ...planForm, recipe_name: e.target.value })}
+              placeholder="Escreva o cardápio (ex.: Arroz, feijão, carne, salada) ou escolha uma ficha técnica já salva"
+              required
+            />
+            <datalist id="fichas-list">
+              {recipes.map((r) => <option key={r.id} value={r.name} />)}
+            </datalist>
+            <small className="muted">Digite livremente o que será servido nesses dias, ou comece a digitar para escolher uma ficha técnica já cadastrada (nesse caso as quantidades são calculadas automaticamente).</small>
+          </label>
+          <label className="full">Descrição detalhada (opcional)
+            <textarea
+              className="input"
+              rows={2}
+              placeholder="Ex.: Feijão, arroz, carne, salada e farofa, suco de uva"
+              value={planForm.description}
+              onChange={(e) => setPlanForm({ ...planForm, description: e.target.value })}
+            />
           </label>
           <label>Tipo de refeição
             <select className="input" value={planForm.meal_type_id} onChange={(e) => setPlanForm({ ...planForm, meal_type_id: e.target.value })}>

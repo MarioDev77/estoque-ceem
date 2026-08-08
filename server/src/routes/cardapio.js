@@ -172,18 +172,24 @@ router.post('/cardapios', requirePermission('cardapio', 'can_create'), async (re
   } catch (err) { next(err); }
 });
 
-// Planejar cardápio de um período a partir de uma ficha técnica
+// Planejar cardápio de um período a partir de uma ficha técnica (ou de um texto livre)
 router.post('/cardapios/planejar', requirePermission('cardapio', 'can_create'), async (req, res, next) => {
   try {
     const b = req.body || {};
-    const { start, end, recipe_id, meal_type_id, students, days } = b;
-    if (!start || !end || !recipe_id) return res.status(400).json({ error: 'Informe período e ficha técnica.' });
+    const { start, end, recipe_id, meal_type_id, students, title, description } = b;
+    if (!start || !end) return res.status(400).json({ error: 'Informe o período.' });
+    if (!recipe_id && !str(title)) return res.status(400).json({ error: 'Selecione uma ficha técnica ou escreva o cardápio.' });
 
     const people = num(students, 0);
-    const recipe = await get('SELECT * FROM recipes WHERE id = ?', [recipe_id]);
-    if (!recipe) return res.status(404).json({ error: 'Ficha técnica não encontrada.' });
-
-    const ingredients = await query('SELECT * FROM recipe_ingredients WHERE recipe_id = ?', [recipe_id]);
+    let recipe = null;
+    let ingredients = [];
+    if (recipe_id) {
+      recipe = await get('SELECT * FROM recipes WHERE id = ?', [recipe_id]);
+      if (!recipe) return res.status(404).json({ error: 'Ficha técnica não encontrada.' });
+      ingredients = await query('SELECT * FROM recipe_ingredients WHERE recipe_id = ?', [recipe_id]);
+    }
+    const menuTitle = recipe ? 'Cardápio do dia — ' + recipe.name : str(title, 200);
+    const menuDescription = str(description, 300) || (recipe ? '' : str(title, 300));
 
     await transaction(async (conn) => {
       // gera em dias letivos (seg-sex)
@@ -198,9 +204,9 @@ router.post('/cardapios/planejar', requirePermission('cardapio', 'can_create'), 
           const cal = calRes[0][0];
           const dayType = cal ? cal.day_type : 'letivo';
           if (dayType === 'letivo' || dayType === 'evento') {
-            await conn.query(`INSERT INTO menus (date, meal_type_id, title, expected_students, status, created_by)
-               VALUES (?,?,?,?,'planejado',?)`,
-              [cur, num(meal_type_id) || recipe.meal_type_id || 2, 'Cardápio do dia — ' + recipe.name, people, req.user.id]);
+            await conn.query(`INSERT INTO menus (date, meal_type_id, title, expected_students, status, notes, created_by)
+               VALUES (?,?,?,?,'planejado',?,?)`,
+              [cur, num(meal_type_id) || (recipe && recipe.meal_type_id) || 2, menuTitle, people, menuDescription, req.user.id]);
             const menuId = await lastId(conn);
             for (const ing of ingredients) {
               const total = calcTotalQuantity(ing.quantity_per_serving, ing.unit, people);
@@ -216,7 +222,7 @@ router.post('/cardapios/planejar', requirePermission('cardapio', 'can_create'), 
         cur = nd.toISOString().slice(0, 10);
         guard++;
       }
-      await audit({ userId: req.user.id, action: 'planejar', module: 'cardapio', entityType: 'menu', newValue: { start, end, recipe_id, students: people, created } });
+      await audit({ userId: req.user.id, action: 'planejar', module: 'cardapio', entityType: 'menu', newValue: { start, end, recipe_id, title: menuTitle, students: people, created } });
       res.json({ ok: true, created });
     });
   } catch (err) { next(err); }
