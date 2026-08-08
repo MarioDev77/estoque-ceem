@@ -19,7 +19,7 @@ router.get('/compras/sugestao', requirePermission('compras'), async (req, res, n
 
     // Consumo médio dos últimos 30 dias
     const avgConsumption = await query(`
-      SELECT food_id, SUM(quantity) / 30.0 AS daily_avg, unit
+      SELECT food_id, SUM(quantity) / 30.0 AS daily_avg
       FROM meal_consumption mc JOIN meals m ON m.id = mc.meal_id
       WHERE m.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
       GROUP BY food_id
