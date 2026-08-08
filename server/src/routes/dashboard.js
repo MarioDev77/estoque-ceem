@@ -125,7 +125,7 @@ router.get('/dashboard', requirePermission('dashboard'), async (req, res, next) 
     `, [String(year)]);
 
     // Notificações recentes
-    const notifications = await query(`SELECT * FROM notifications WHERE read = 0 ORDER BY
+    const notifications = await query(`SELECT * FROM notifications WHERE \`read\` = 0 ORDER BY
       CASE severity WHEN 'danger' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END, created_at DESC LIMIT 10`);
 
     res.json({

@@ -46,7 +46,7 @@ export async function notifyExpiring() {
 }
 
 export async function clearOldNotifications() {
-  await run(`DELETE FROM notifications WHERE read = 1 AND created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)`);
+  await run(`DELETE FROM notifications WHERE \`read\` = 1 AND created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)`);
 }
 
 export async function generateAll() {

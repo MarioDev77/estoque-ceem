@@ -24,14 +24,14 @@ router.get('/notificacoes', async (req, res, next) => {
 
 router.post('/notificacoes/:id/read', async (req, res, next) => {
   try {
-    await run('UPDATE notifications SET read = 1 WHERE id = ?', [req.params.id]);
+    await run('UPDATE notifications SET `read` = 1 WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
 
 router.post('/notificacoes/read-all', async (req, res, next) => {
   try {
-    await run('UPDATE notifications SET read = 1');
+    await run('UPDATE notifications SET `read` = 1');
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
