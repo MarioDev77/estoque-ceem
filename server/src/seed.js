@@ -75,8 +75,8 @@ async function seedPermissions(conn) {
 }
 
 async function seedUsers(conn) {
-  const adminPass = hashPassword('admin123');
-  await conn.query(`INSERT IGNORE INTO users (id, name, email, password_hash, role_id, active) VALUES (1, 'Administrador', 'admin@escola.edu.br', ?, 1, 1)`, [adminPass]);
+  const adminPass = hashPassword('@Ceem.gov');
+  await conn.query(`INSERT IGNORE INTO users (id, name, email, password_hash, role_id, active) VALUES (1, 'Administrador', 'admin.ceem.gov.br@gmail.com', ?, 1, 1)`, [adminPass]);
   await conn.query(`INSERT IGNORE INTO users (id, name, email, password_hash, role_id, active) VALUES (2, 'Maria Nutrição', 'nutricao@escola.edu.br', ?, 2, 1)`, [hashPassword('nutricao123')]);
   await conn.query(`INSERT IGNORE INTO users (id, name, email, password_hash, role_id, active) VALUES (3, 'João Cantina', 'cantina@escola.edu.br', ?, 3, 1)`, [hashPassword('cantina123')]);
   await conn.query(`INSERT IGNORE INTO users (id, name, email, password_hash, role_id, active) VALUES (4, 'Diretor Carlos', 'direcao@escola.edu.br', ?, 4, 1)`, [hashPassword('direcao123')]);
@@ -628,7 +628,7 @@ export async function seedAll({ force = false } = {}) {
     await seedNotifications(conn);
   });
   console.log('✅ Seed concluído! Dados de demonstração criados.');
-  console.log('   Login admin: admin@escola.edu.br / admin123');
+  console.log('   Login admin: admin.ceem.gov.br@gmail.com / @Ceem.gov');
 }
 
 // Executa seed se chamado diretamente
