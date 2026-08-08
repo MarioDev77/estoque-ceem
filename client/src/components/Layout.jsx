@@ -72,9 +72,9 @@ export default function Layout() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="brand-icon"><UtensilsCrossed size={20} /></span>
+          <img src="/logo-escola.png" alt="Colégio Estadual de Tempo Integral Eudóxia Maria" className="sidebar-logo" />
           <div>
-            <strong>FoodSchool</strong>
+            <strong>Eudóxia Maria</strong>
             <small>Gestão Alimentar</small>
           </div>
         </div>
