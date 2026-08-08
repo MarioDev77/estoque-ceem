@@ -152,11 +152,12 @@ label small { font-weight: 400; }
 .stat-card {
   background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border);
   box-shadow: var(--shadow); padding: 16px; display: flex; align-items: center; gap: 12px;
+  overflow: hidden;
 }
 .stat-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.stat-info { min-width: 0; }
+.stat-info { min-width: 0; flex: 1; }
 .stat-label { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
-.stat-value { font-size: 20px; font-weight: 800; display: block; margin-top: 2px; white-space: nowrap; }
+.stat-value { font-size: 19px; font-weight: 800; display: block; margin-top: 2px; white-space: normal; overflow-wrap: break-word; line-height: 1.2; }
 .stat-sub { color: var(--text-muted); font-size: 11px; }
 .stat-teal .stat-icon { background: #ccfbf1; color: #0f766e; }
 .stat-blue .stat-icon { background: #dbeafe; color: #1d4ed8; }
