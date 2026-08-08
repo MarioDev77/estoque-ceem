@@ -1,15 +1,28 @@
 {
-  "name": "sistema-alimentacao-escolar",
+  "name": "client",
   "version": "1.0.0",
   "private": true,
-  "description": "Sistema Web de Gestão da Alimentação Escolar — planejar, comprar, armazenar, preparar, servir, registrar consumo, analisar.",
+  "type": "module",
   "scripts": {
-    "install:all": "npm --prefix server install && npm --prefix client install && npm --prefix . install",
-    "setup": "npm --prefix server install && npm --prefix client install",
-    "dev:server": "npm --prefix server run dev",
-    "dev:client": "npm --prefix client run dev",
-    "seed": "npm --prefix server run seed",
-    "start": "npm --prefix server start"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "chart.js": "^4.4.4",
+    "html5-qrcode": "^2.3.8",
+    "jspdf": "^2.5.2",
+    "jspdf-autotable": "^3.8.2",
+    "lucide-react": "^0.451.0",
+    "react": "^18.3.1",
+    "react-chartjs-2": "^5.2.0",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.8"
   }
 }
-
