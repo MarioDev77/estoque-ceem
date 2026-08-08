@@ -75,14 +75,7 @@ npm run dev:client
 # → http://localhost:5173
 ```
 
-### Acessos de demonstração
 
-| Perfil | E-mail | Senha |
-|---|---|---|
-| Administrador | admin@escola.edu.br | admin123 |
-| Nutrição | nutricao@escola.edu.br | nutricao123 |
-| Cantina | cantina@escola.edu.br | cantina123 |
-| Direção | direcao@escola.edu.br | direcao123 |
 
 ---
 
