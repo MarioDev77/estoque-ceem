@@ -20,7 +20,7 @@ export default function Scanner() {
   const [flash, setFlash] = useState(null);          // 'ok' | 'err'
   const [openReg, setOpenReg] = useState(false);
   const [openEntry, setOpenEntry] = useState(false);
-  const [regForm, setRegForm] = useState({ name: '', barcode: '', category_id: '', unit: 'kg', brand: '', storage_location: '', min_stock: '', ideal_stock: '' });
+  const [regForm, setRegForm] = useState({ name: '', barcode: '', category_id: '', unit: 'kg', brand: '', storage_location: '', min_stock: '', ideal_stock: '', initial_quantity: '' });
   const [entryForm, setEntryForm] = useState({ food_id: '', barcode: '', quantity: '1', batch_number: '', expiry_date: '', supplier_id: '', unit_cost: '', reason: 'compra', notes: '' });
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -78,7 +78,7 @@ export default function Scanner() {
       setError(msg);
       if (err.response && err.response.data?.cadastrar) {
         // Produto novo: abre cadastro com o código preenchido
-        setRegForm((f) => ({ ...f, barcode: code }));
+        setRegForm({ name: '', barcode: code, category_id: '', unit: 'kg', brand: '', storage_location: '', min_stock: '', ideal_stock: '', initial_quantity: '' });
         setOpenReg(true);
       }
       if (!silent) { beep(BEEP_ERR); flashFeedback('err'); }
@@ -172,7 +172,7 @@ export default function Scanner() {
   // Cadastro de novo produto
   // ============================================================
   async function openRegister(barcode) {
-    setRegForm((f) => ({ ...f, barcode: barcode || manualBarcode || result?.barcode || '' }));
+    setRegForm({ name: '', barcode: barcode || manualBarcode || result?.barcode || '', category_id: '', unit: 'kg', brand: '', storage_location: '', min_stock: '', ideal_stock: '', initial_quantity: '' });
     if (!categories.length) {
       try { const cats = await api.get('/categorias'); setCategories(cats.data); } catch (_) { }
     }
@@ -183,10 +183,38 @@ export default function Scanner() {
     e.preventDefault();
     setError('');
     try {
-      await api.post('/alimentos', regForm);
+      const res = await api.post('/alimentos', regForm);
+      const qty = Number(String(regForm.initial_quantity || '0').replace(',', '.'));
+      if (qty > 0 && res.data?.id) {
+        await api.post('/estoque/entrada', {
+          food_id: res.data.id,
+          quantity: qty,
+          reason: 'estoque_inicial',
+          notes: 'Quantidade inicial cadastrada junto com o produto (scanner).',
+        });
+      }
       setOpenReg(false);
       beep(BEEP_OK);
-      await lookupWithBatches(regForm.barcode, { silent: true });
+      if (regForm.barcode) {
+        await lookupWithBatches(regForm.barcode, { silent: true });
+      } else {
+        // Sem código de barras: monta o resultado localmente para mostrar de imediato
+        setResult({
+          id: res.data.id,
+          name: regForm.name,
+          unit: regForm.unit,
+          barcode: '',
+          brand: regForm.brand,
+          storage_location: regForm.storage_location,
+          category_name: categories.find((c) => String(c.id) === String(regForm.category_id))?.name || '',
+          stock_quantity: qty,
+          min_stock: Number(regForm.min_stock) || 0,
+          avg_price: 0,
+          batches: [],
+          lowStock: false,
+        });
+        setManualBarcode('');
+      }
     } catch (err) {
       setError(getErrMsg(err, 'Erro ao cadastrar alimento.'));
     }
@@ -235,7 +263,7 @@ async function handleOpenEntry(food) {
         title="Leitor de Código de Barras"
         subtitle="Identifique alimentos, consulte estoque, validade e lote"
         actions={
-          <button className="btn btn-outline" onClick={() => openRegister()}><PackagePlus size={16} /> Novo alimento</button>
+          <button className="btn btn-outline" onClick={() => openRegister()}><PackagePlus size={16} /> Novo produto</button>
         }
       />
 
@@ -346,20 +374,29 @@ async function handleOpenEntry(food) {
             <ScanBarcode size={48} />
             <h3>Nenhum produto identificado</h3>
             <p>Aponte a câmera para o código de barras, digite o código abaixo ou use o leitor USB.</p>
-            <button className="btn btn-outline" onClick={() => openRegister()}><PackagePlus size={15} /> Cadastrar alimento</button>
+            <p className="muted" style={{ margin: '2px 0 10px' }}>Ou, se o produto não tem código de barras, cadastre direto:</p>
+            <button className="btn btn-primary" onClick={() => openRegister()}><PackagePlus size={15} /> Novo produto (nome + quantidade)</button>
           </div>
         )}
       </div>
 
       {/* Modal de cadastro */}
-      <Modal open={openReg} onClose={() => setOpenReg(false)} title="Cadastrar alimento">
+      <Modal open={openReg} onClose={() => setOpenReg(false)} title="Novo produto">
         {error && <div className="alert alert-danger">{error}</div>}
         <form onSubmit={saveRegister} className="form-grid">
-          <label className="full">Nome
-            <input className="input" value={regForm.name} onChange={(e) => setRegForm({ ...regForm, name: e.target.value })} required />
+          <label className="full">Nome do produto
+            <input className="input" value={regForm.name} onChange={(e) => setRegForm({ ...regForm, name: e.target.value })} placeholder="Ex.: Arroz, Macarrão, Tomate…" required />
           </label>
-          <label className="full">Código de barras
-            <input className="input" value={regForm.barcode} onChange={(e) => setRegForm({ ...regForm, barcode: e.target.value })} />
+          <label>Quantidade em estoque
+            <input className="input" type="number" step="0.001" min="0" value={regForm.initial_quantity} onChange={(e) => setRegForm({ ...regForm, initial_quantity: e.target.value })} placeholder="Ex.: 50" />
+          </label>
+          <label>Unidade
+            <select className="input" value={regForm.unit} onChange={(e) => setRegForm({ ...regForm, unit: e.target.value })}>
+              {['kg', 'g', 'L', 'mL', 'un'].map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </label>
+          <label className="full">Código de barras {result === null && !manualBarcode && '(opcional — preenchido automaticamente ao escanear)'}
+            <input className="input" value={regForm.barcode} onChange={(e) => setRegForm({ ...regForm, barcode: e.target.value })} placeholder="Deixe em branco se não tiver" />
           </label>
           <label>Categoria
             <select className="input" value={regForm.category_id} onChange={(e) => setRegForm({ ...regForm, category_id: e.target.value })}>
@@ -367,26 +404,21 @@ async function handleOpenEntry(food) {
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </label>
-          <label>Unidade
-            <select className="input" value={regForm.unit} onChange={(e) => setRegForm({ ...regForm, unit: e.target.value })}>
-              {['kg', 'g', 'L', 'mL', 'un'].map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
-          </label>
           <label>Marca
             <input className="input" value={regForm.brand} onChange={(e) => setRegForm({ ...regForm, brand: e.target.value })} />
           </label>
-          <label>Local
+          <label>Local de armazenamento
             <input className="input" value={regForm.storage_location} onChange={(e) => setRegForm({ ...regForm, storage_location: e.target.value })} />
           </label>
           <label>Estoque mínimo
-            <input className="input" type="number" step="0.1" value={regForm.min_stock} onChange={(e) => setRegForm({ ...regForm, min_stock: e.target.value })} />
+            <input className="input" type="number" step="0.1" value={regForm.min_stock} onChange={(e) => setRegForm({ ...regForm, min_stock: e.target.value })} placeholder="Avisar quando ficar abaixo disso" />
           </label>
           <label>Estoque ideal
             <input className="input" type="number" step="0.1" value={regForm.ideal_stock} onChange={(e) => setRegForm({ ...regForm, ideal_stock: e.target.value })} />
           </label>
           <div className="form-actions full">
             <button type="button" className="btn" onClick={() => setOpenReg(false)}>Cancelar</button>
-            <button type="submit" className="btn btn-primary">Cadastrar</button>
+            <button type="submit" className="btn btn-primary"><PackagePlus size={16} /> Salvar produto</button>
           </div>
         </form>
       </Modal>
