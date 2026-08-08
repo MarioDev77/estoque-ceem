@@ -7,18 +7,21 @@ import 'dotenv/config';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Cria a pool de conexões MySQL a partir das variáveis de ambiente.
-// Suporta diversos formatos/provedores:
-//   - URL completa: MYSQL_PRIVATE_URL, MYSQL_URL, DATABASE_URL,
-//     MYSQL_ADDON_URI, CLEARDB_DATABASE_URL, JAWSDB_URL, MYSQL_ADDON_HOST etc.
-//   - Variáveis separadas (Railway): MYSQLHOST, MYSQLPORT, MYSQLDATABASE,
-//     MYSQLUSER, MYSQLPASSWORD
+// Suporta diversos formatos/provedores (Railway, Heroku, ClearDB, etc.):
+//   - URL completa: MYSQL_PRIVATE_URL, MYSQL_URL, URL_MYSQL, DATABASE_URL,
+//     MYSQL_ADDON_URI, CLEARDB_DATABASE_URL, JAWSDB_URL
+//   - Variáveis separadas (Railway): MYSQLHOST, MYSQLPORT,
+//     MYSQLDATABASE/MYSQL_DATABASE, MYSQLUSER, MYSQLPASSWORD
 //   - Variáveis separadas (padrão): MYSQL_HOST, MYSQL_PORT, MYSQL_DATABASE,
 //     MYSQL_USER, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD
+//   - Variáveis em português (Railway): USUARIO_MYSQL, SENHA_ROOT_DO_MYSQL,
+//     SENHA_DO_MYSQL
 function getConnectionConfig() {
   // 1) URL completa
   const url =
     process.env.MYSQL_PRIVATE_URL ||
     process.env.MYSQL_URL ||
+    process.env.URL_MYSQL ||
     process.env.DATABASE_URL ||
     process.env.MYSQL_ADDON_URI ||
     process.env.CLEARDB_DATABASE_URL ||
@@ -28,7 +31,7 @@ function getConnectionConfig() {
     return { uri: url };
   }
 
-  // 2) Variáveis separadas (Railway + genéricas)
+  // 2) Variáveis separadas
   const host =
     process.env.MYSQLHOST ||
     process.env.MYSQL_HOST ||
@@ -40,20 +43,34 @@ function getConnectionConfig() {
   const database =
     process.env.MYSQLDATABASE ||
     process.env.MYSQL_DATABASE ||
-    process.env.MYSQL_ADDON_DB;
+    process.env.MYSQL_ADDON_DB ||
+    'railway'; // Nome padrão do banco gerado pelo Railway
   const user =
     process.env.MYSQLUSER ||
     process.env.MYSQL_USER ||
-    process.env.MYSQL_ADDON_USER;
+    process.env.MYSQL_ADDON_USER ||
+    process.env.USUARIO_MYSQL ||
+    'root';
   const password =
     process.env.MYSQLPASSWORD ||
     process.env.MYSQL_PASSWORD ||
     process.env.MYSQL_ADDON_PASSWORD ||
-    process.env.MYSQL_ROOT_PASSWORD;
+    process.env.MYSQL_ROOT_PASSWORD ||
+    process.env.SENHA_ROOT_DO_MYSQL ||
+    process.env.SENHA_DO_MYSQL ||
+    '';
 
-  if (!host || !database) {
+  if (!host) {
+    // Diagnóstico: lista os nomes das variáveis de ambiente relacionadas a banco
+    // que estão presentes (sem expor valores sensíveis).
+    const relevantKeys = Object.keys(process.env).filter((k) =>
+      /MYSQL|DATABASE|DB|CLEARDB|JAWSDB|PGHOST|POSTGRES|SENHA/i.test(k)
+    );
     throw new Error(
-      'Configuração do MySQL ausente. Defina MYSQL_PRIVATE_URL (ex.: mysql://user:pass@host:3306/dbname) ou as variáveis MYSQL_HOST/MYSQL_DATABASE/MYSQL_USER/MYSQL_PASSWORD.'
+      'Configuração do MySQL ausente. Defina MYSQL_PRIVATE_URL ou URL_MYSQL ' +
+      '(ex.: mysql://user:pass@host:3306/dbname) ou as variáveis ' +
+      'MYSQL_HOST/MYSQL_DATABASE/MYSQL_USER/MYSQL_PASSWORD. ' +
+      `Variáveis de banco detectadas: ${JSON.stringify(relevantKeys)}`
     );
   }
 
