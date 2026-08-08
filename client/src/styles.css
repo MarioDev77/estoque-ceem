@@ -261,6 +261,38 @@ label small { font-weight: 400; }
 .menu-day-card .meal-row { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 14px; }
 .menu-day-card .meal-row:last-child { border-bottom: none; }
 
+/* Seletor de mês (< Agosto 2026 >) */
+.picker { display: flex; align-items: center; gap: 10px; }
+.picker h3 { margin: 0; min-width: 150px; text-align: center; }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Lista/agenda do cardápio: um dia embaixo do outro, estilo formulário */
+.agenda-list { display: flex; flex-direction: column; gap: 10px; }
+.agenda-day {
+  border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--surface);
+}
+.agenda-day.today { border-color: var(--primary); background: #f0fdfa; }
+.agenda-day.cal-ferias, .agenda-day.cal-recesso { background: #fffbeb; }
+.agenda-day.cal-feriado { background: #fef2f2; }
+.agenda-day.cal-sem_alimentacao { opacity: .65; }
+.agenda-day-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.agenda-day-head > div:first-child { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.agenda-date { font-size: 15px; font-weight: 800; color: var(--primary-dark); }
+.agenda-weekday { font-size: 14px; font-weight: 600; color: var(--text); }
+.agenda-meals { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.agenda-meal { background: var(--bg); border-radius: 10px; padding: 10px 12px; border-left: 3px solid var(--primary-light); }
+.agenda-meal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.agenda-meal-name { font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: .03em; color: var(--primary-dark); }
+.agenda-meal-desc { margin: 6px 0 4px; font-size: 14px; color: var(--text); white-space: pre-wrap; }
+.agenda-empty { margin-top: 8px; font-size: 13px; color: var(--text-muted); font-style: italic; }
+
+/* Formulário de refeições do modal de cardápio */
+.meal-block { border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; background: var(--bg); }
+.meal-block-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.meal-block-head h4 { margin: 0; font-size: 14px; }
+.ing-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.ing-row .input { flex: 1; }
+
 /* ---------- Scanner ---------- */
 .scanner-layout { display: grid; grid-template-columns: 340px 1fr; gap: 18px; align-items: start; }
 .scanner-card { text-align: center; }
@@ -368,6 +400,9 @@ label small { font-weight: 400; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
   .calendar-grid { grid-template-columns: repeat(7, minmax(36px, 1fr)); gap: 3px; }
   .calendar-day { min-height: 64px; padding: 4px; }
+  .agenda-day-head { flex-direction: column; align-items: flex-start; }
+  .agenda-day-head > div:first-child { width: 100%; }
+  .ing-row { flex-wrap: wrap; }
 }
 @media (max-width: 480px) {
   .stats-grid { grid-template-columns: 1fr; }

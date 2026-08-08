@@ -5,7 +5,8 @@ import { useAuth } from '../auth.jsx';
 import { getErrMsg, today, addDays, formatDateBR } from '../utils.js';
 import { PageHeader, Modal, Badge } from '../components/ui.jsx';
 
-const WEEKDAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+const WEEKDAYS_FULL = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
 export default function Cardapio() {
   const { can } = useAuth();
@@ -19,7 +20,7 @@ export default function Cardapio() {
   const [open, setOpen] = useState(false);
   const [openPlan, setOpenPlan] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ date: today(), meals: [{ meal_type_id: '2', title: 'Almoço', expected_students: 750, items: [] }] });
+  const [form, setForm] = useState({ date: today(), meals: [{ meal_type_id: '2', title: 'Almoço', description: '', expected_students: 750, items: [] }] });
   const [planForm, setPlanForm] = useState({ start: today(), end: addDays(today(), 14), recipe_id: '', meal_type_id: '2', students: 750 });
 
   const { year, month } = currentMonth;
@@ -74,9 +75,30 @@ export default function Cardapio() {
   const dateKey = (d) => `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   const mealTypeName = (id) => mealTypes.find((mt) => mt.id === Number(id))?.name || '';
 
-  function openNewDay(date) {
+  async function openNewDay(date) {
     const dStr = `${year}-${String(month).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
-    setForm({ date: dStr, meals: [{ meal_type_id: '2', title: 'Almoço', expected_students: 750, items: [] }] });
+    const existing = menusByDate[dStr];
+    if (existing && existing.length) {
+      // Busca os itens completos desse dia (a visão mensal só traz um resumo em texto)
+      try {
+        const res = await api.get('/cardapios', { params: { start: dStr, end: dStr } });
+        setForm({
+          date: dStr,
+          meals: res.data.map((m) => ({
+            meal_type_id: String(m.meal_type_id),
+            title: m.title || '',
+            description: m.description || '',
+            expected_students: m.expected_students || 0,
+            items: (m.items || []).map((it) => ({ food_id: String(it.food_id), portion_per_student: it.portion_per_student })),
+          })),
+        });
+      } catch (err) {
+        setError(getErrMsg(err, 'Erro ao carregar cardápio do dia.'));
+        return;
+      }
+    } else {
+      setForm({ date: dStr, meals: [{ meal_type_id: '2', title: 'Almoço', description: '', expected_students: 750, items: [] }] });
+    }
     setOpen(true);
   }
 
@@ -93,7 +115,7 @@ export default function Cardapio() {
     setForm({ ...form, meals });
   }
   function addMeal() {
-    setForm({ ...form, meals: [...form.meals, { meal_type_id: '1', title: 'Lanche da manhã', expected_students: 750, items: [] }] });
+    setForm({ ...form, meals: [...form.meals, { meal_type_id: '1', title: 'Lanche da manhã', description: '', expected_students: 750, items: [] }] });
   }
   function addItem(mealIdx) {
     const meals = [...form.meals];
@@ -154,42 +176,54 @@ export default function Cardapio() {
         <div className="card-header">
           <div className="picker">
             <button className="icon-btn" onClick={() => changeMonth(-1)}><ChevronLeft size={18} /></button>
-            <h3>{['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'][month - 1]} {year}</h3>
+            <h3>{MONTHS[month - 1]} {year}</h3>
             <button className="icon-btn" onClick={() => changeMonth(1)}><ChevronRight size={18} /></button>
           </div>
         </div>
 
-        <div className="meal-calendar">
-          <div className="mc-header">
-            {WEEKDAYS.map((w, i) => <div key={i} className="mc-dow">{w}</div>)}
-          </div>
-          <div className="mc-grid">
-            {days.map((d, idx) => {
-              if (d === null) return <div key={`e${idx}`} className="mc-cell empty" />;
-              const k = dateKey(d);
-              const menus = menusByDate[k] || [];
-              const cal = calendarByDate[k];
-              const isToday = k === today();
-              return (
-                <div key={k} className={`mc-cell ${isToday ? 'today' : ''} ${cal ? `cal-${cal.day_type}` : ''}`}>
-                  <div className="mc-cell-head">
-                    <span className="mc-num">{d}</span>
-                    {(can('cardapio', 'can_create')) && <button className="icon-btn" onClick={() => openNewDay(d)}><Plus size={13} /></button>}
+        <div className="agenda-list">
+          {days.filter((d) => d !== null).map((d) => {
+            const k = dateKey(d);
+            const menus = (menusByDate[k] || []).slice().sort((a, b) => a.meal_type_id - b.meal_type_id);
+            const cal = calendarByDate[k];
+            const isToday = k === today();
+            const dow = new Date(year, month - 1, d).getDay();
+            const nonLetivo = cal && cal.day_type !== 'letivo';
+            return (
+              <div key={k} className={`agenda-day ${isToday ? 'today' : ''} ${cal ? `cal-${cal.day_type}` : ''}`}>
+                <div className="agenda-day-head">
+                  <div>
+                    <span className="agenda-date">{String(d).padStart(2, '0')}/{String(month).padStart(2, '0')}</span>
+                    <span className="agenda-weekday">{WEEKDAYS_FULL[dow]}</span>
+                    {isToday && <Badge tone="teal">Hoje</Badge>}
+                    {nonLetivo && <Badge tone="neutral">{cal.day_type.replace('_', ' ')}</Badge>}
                   </div>
-                  {cal && cal.day_type !== 'letivo' && <small className="mc-cal-label">{cal.day_type.replace('_', ' ')}</small>}
-                  {menus.map((m) => (
-                    <div key={m.id} className="mc-meal">
-                      <span className="mc-meal-type">{m.meal_type_name}</span>
-                      <small>{m.items}</small>
-                      <Badge tone={statusBadge(m.status).tone}>{statusBadge(m.status).label}</Badge>
-                      {m.expected_students > 0 && <small className="muted">{m.expected_students} refeições</small>}
-                    </div>
-                  ))}
-                  {menus.length === 0 && cal?.day_type !== 'ferias' && <small className="muted">Sem cardápio</small>}
+                  {can('cardapio', 'can_create') && (
+                    <button className="btn btn-outline btn-sm" onClick={() => openNewDay(d)}>
+                      <Plus size={14} /> {menus.length ? 'Editar' : 'Adicionar'}
+                    </button>
+                  )}
                 </div>
-              );
-            })}
-          </div>
+
+                {menus.length > 0 ? (
+                  <div className="agenda-meals">
+                    {menus.map((m) => (
+                      <div key={m.id} className="agenda-meal">
+                        <div className="agenda-meal-head">
+                          <span className="agenda-meal-name">{m.meal_type_name}{m.title && m.title !== m.meal_type_name ? ` — ${m.title}` : ''}</span>
+                          <Badge tone={statusBadge(m.status).tone}>{statusBadge(m.status).label}</Badge>
+                        </div>
+                        <p className="agenda-meal-desc">{m.description || m.items || 'Sem descrição — clique em editar para preencher.'}</p>
+                        {m.expected_students > 0 && <small className="muted">{m.expected_students} refeições estimadas</small>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  !nonLetivo && <div className="agenda-empty">Sem cardápio</div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -215,9 +249,23 @@ export default function Cardapio() {
                 <label>Alunos estimados
                   <input className="input" type="number" min="0" value={meal.expected_students} onChange={(e) => setMeal(mi, 'expected_students', e.target.value)} />
                 </label>
+                <label className="full">Descrição do cardápio
+                  <textarea
+                    className="input"
+                    rows={2}
+                    placeholder="Ex.: Feijão, arroz, carne, salada e farofa, suco de uva"
+                    value={meal.description || ''}
+                    onChange={(e) => setMeal(mi, 'description', e.target.value)}
+                  />
+                  <small className="muted">Descreva livremente o que será servido. Este texto aparece na lista do cardápio.</small>
+                </label>
               </div>
-              <div className="ing-row" style={{ marginTop: 8 }}>
-                <button type="button" className="btn btn-outline" onClick={() => addItem(mi)}><Plus size={14} /> Alimento</button>
+
+              <div className="section-title" style={{ marginTop: 4 }}>
+                <h4 style={{ fontSize: 13 }}>Alimentos (opcional — usado para calcular estoque e compras)</h4>
+              </div>
+              <div className="ing-row" style={{ marginBottom: 8 }}>
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => addItem(mi)}><Plus size={14} /> Alimento</button>
               </div>
               {meal.items.map((item, ii) => (
                 <div key={ii} className="ing-row">

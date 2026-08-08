@@ -112,7 +112,7 @@ router.get('/cardapios', requirePermission('cardapio'), async (req, res, next) =
     const end = str(req.query.end, 10) || '2100-12-31';
 
     const menus = await query(`
-      SELECT m.*, mt.name AS meal_type_name,
+      SELECT m.*, m.notes AS description, mt.name AS meal_type_name,
              (SELECT GROUP_CONCAT(f.name SEPARATOR ' + ') FROM menu_items mi JOIN foods f ON f.id = mi.food_id WHERE mi.menu_id = m.id) AS items_summary,
              (SELECT GROUP_CONCAT(CONCAT(mi.total_quantity, ' ', f.unit) SEPARATOR '; ') FROM menu_items mi JOIN foods f ON f.id = mi.food_id WHERE mi.menu_id = m.id) AS quantities_summary
       FROM menus m
@@ -143,7 +143,7 @@ router.get('/cardapios', requirePermission('cardapio'), async (req, res, next) =
 router.post('/cardapios', requirePermission('cardapio', 'can_create'), async (req, res, next) => {
   try {
     const b = req.body || {};
-    const { date, meals = [] } = b; // meals: [{meal_type_id, title, expected_students, items:[{food_id,portion_per_student}]}]
+    const { date, meals = [] } = b; // meals: [{meal_type_id, title, description, expected_students, items:[{food_id,portion_per_student}]}]
     if (!date) return res.status(400).json({ error: 'Informe a data.' });
 
     await transaction(async (conn) => {
@@ -152,9 +152,9 @@ router.post('/cardapios', requirePermission('cardapio', 'can_create'), async (re
         const mealTypeId = num(meal.meal_type_id);
         if (!mealTypeId) continue;
         const expectedStudents = num(meal.expected_students, 0);
-        await conn.query(`INSERT INTO menus (date, meal_type_id, title, expected_students, status, created_by)
-           VALUES (?,?,?,?,'planejado',?)`,
-          [str(date), mealTypeId, str(meal.title, 200), expectedStudents, req.user.id]);
+        await conn.query(`INSERT INTO menus (date, meal_type_id, title, expected_students, status, notes, created_by)
+           VALUES (?,?,?,?,'planejado',?,?)`,
+          [str(date), mealTypeId, str(meal.title, 200), expectedStudents, str(meal.description, 300), req.user.id]);
         const menuId = await lastId(conn);
         for (const item of (meal.items || [])) {
           const food = await conn.query('SELECT * FROM foods WHERE id = ?', [num(item.food_id)]);
@@ -235,7 +235,7 @@ router.get('/cardapios/mes', requirePermission('cardapio'), async (req, res, nex
 
     const menus = await query(`
       SELECT m.date, m.id, m.meal_type_id, mt.name AS meal_type_name, m.title,
-             m.expected_students, m.status,
+             m.expected_students, m.status, m.notes AS description,
              (SELECT GROUP_CONCAT(f.name SEPARATOR ' + ') FROM menu_items mi JOIN foods f ON f.id = mi.food_id WHERE mi.menu_id = m.id) AS items
       FROM menus m JOIN meal_types mt ON mt.id = m.meal_type_id
       WHERE m.date BETWEEN ? AND ?
