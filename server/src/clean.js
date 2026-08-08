@@ -8,7 +8,7 @@
 //   - usuários (para permitir login)
 // Deixa o sistema ZERADO para ir preenchendo conforme o uso real.
 // ============================================================
-import { db, run } from './db.js';
+import { transaction, run } from './db.js';
 
 const TABLES_TO_CLEAR = [
   'ai_conversations',
@@ -38,32 +38,35 @@ const TABLES_TO_CLEAR = [
   'school_profile',
 ];
 
-try {
-  db.exec('PRAGMA foreign_keys = OFF;');
-  db.exec('BEGIN');
-  for (const table of TABLES_TO_CLEAR) {
-    try {
-      run(`DELETE FROM ${table}`);
-      // Reseta o autoincrement para os ids recomeçarem de 1
-      try { run(`DELETE FROM sqlite_sequence WHERE name = '${table}'`); } catch (_) { }
-      console.log(`  ✓ ${table} limpa`);
-    } catch (e) {
-      console.log(`  - ${table}: ${e.message}`);
-    }
+(async () => {
+  try {
+    await transaction(async (conn) => {
+      // Desliga as checagens de foreign key durante a limpeza
+      await conn.query('SET FOREIGN_KEY_CHECKS = 0');
+      for (const table of TABLES_TO_CLEAR) {
+        try {
+          await conn.query(`DELETE FROM ${table}`);
+          // Reinicia o autoincrement (MySQL AUTO_INCREMENT)
+          try {
+            await conn.query(`ALTER TABLE ${table} AUTO_INCREMENT = 1`);
+          } catch (_) { }
+          console.log(`  ✓ ${table} limpa`);
+        } catch (e) {
+          console.log(`  - ${table}: ${e.message}`);
+        }
+      }
+
+      // Mantém apenas o usuário administrador para login
+      await conn.query(`DELETE FROM users WHERE id != 1`);
+      try { await conn.query(`ALTER TABLE users AUTO_INCREMENT = 1`); } catch (_) { }
+
+      await conn.query('SET FOREIGN_KEY_CHECKS = 1');
+    });
+    console.log('\n✅ Banco zerado! Dados de demonstração removidos.');
+    console.log('   Mantidos: papéis, permissões, tipos de refeição, categorias');
+    console.log('            e o usuário administrador (admin@escola.edu.br).');
+  } catch (err) {
+    console.error('❌ Erro ao limpar o banco:', err.message);
+    process.exit(1);
   }
-
-  // Mantém apenas o usuário administrador para login
-  run(`DELETE FROM users WHERE id != 1`);
-  run(`DELETE FROM sqlite_sequence WHERE name = 'users'`);
-
-  db.exec('COMMIT');
-  db.exec('PRAGMA foreign_keys = ON;');
-  console.log('\n✅ Banco zerado! Dados de demonstração removidos.');
-  console.log('   Mantidos: papéis, permissões, tipos de refeição, categorias');
-  console.log('            e o usuário administrador (admin@escola.edu.br).');
-} catch (err) {
-  db.exec('ROLLBACK');
-  db.exec('PRAGMA foreign_keys = ON;');
-  console.error('❌ Erro ao limpar o banco:', err.message);
-  process.exit(1);
-}
+})();

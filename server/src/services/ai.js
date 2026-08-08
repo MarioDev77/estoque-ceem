@@ -19,7 +19,7 @@ function formatQty(q, unit) {
   return `${Number(q).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${unit || 'un'}`;
 }
 
-function getStockStatus() {
+async function getStockStatus() {
   return query(`
     SELECT f.id, f.name, f.unit, f.min_stock, f.ideal_stock, f.avg_price, s.quantity
     FROM stock s JOIN foods f ON f.id = s.food_id
@@ -27,11 +27,11 @@ function getStockStatus() {
   `);
 }
 
-function getLowStock() {
-  return getStockStatus().filter((f) => f.quantity <= f.min_stock);
+async function getLowStock() {
+  return (await getStockStatus()).filter((f) => f.quantity <= f.min_stock);
 }
 
-function getExpiringBatches() {
+async function getExpiringBatches() {
   const t = today();
   const in7 = addDays(t, 7);
   const in30 = addDays(t, 30);
@@ -43,15 +43,15 @@ function getExpiringBatches() {
   `, [in7, in30]);
 }
 
-function getMonthSpending(monthPrefix) {
-  const row = get(`
+async function getMonthSpending(monthPrefix) {
+  const row = await get(`
     SELECT COALESCE(SUM(amount),0) AS total FROM expenses
     WHERE substr(expense_date,1,7) = ?
   `, [monthPrefix]);
   return row ? row.total : 0;
 }
 
-function getYearConsumptionByFood() {
+async function getYearConsumptionByFood() {
   const year = today().slice(0, 4);
   return query(`
     SELECT f.name, f.unit, SUM(mc.quantity) AS qty, f.avg_price
@@ -62,17 +62,17 @@ function getYearConsumptionByFood() {
   `, [year]);
 }
 
-function getAvgCostPerMeal() {
+async function getAvgCostPerMeal() {
   const t = today();
   const start = startOfMonth(t);
   const end = endOfMonth(t);
-  const exp = get(`SELECT COALESCE(SUM(amount),0) AS amount FROM expenses WHERE expense_date BETWEEN ? AND ?`, [start, end]).amount;
-  const meals = get(`SELECT COALESCE(SUM(served_students),0) AS students FROM meals WHERE date BETWEEN ? AND ? AND status='realizado'`, [start, end]).students;
+  const exp = (await get(`SELECT COALESCE(SUM(amount),0) AS amount FROM expenses WHERE expense_date BETWEEN ? AND ?`, [start, end])).amount;
+  const meals = (await get(`SELECT COALESCE(SUM(served_students),0) AS students FROM meals WHERE date BETWEEN ? AND ? AND status='realizado'`, [start, end])).students;
   if (!meals) return null;
   return { month: monthKey(t), expense: exp, students: meals, costPerMeal: exp / meals };
 }
 
-function menuForNextDays(days = 7) {
+async function menuForNextDays(days = 7) {
   const start = today();
   const end = addDays(start, days);
   return query(`
@@ -87,11 +87,11 @@ function menuForNextDays(days = 7) {
   `, [start, end]);
 }
 
-function shoppingRecommendation(days = 15) {
-  const stock = getStockStatus();
+async function shoppingRecommendation(days = 15) {
+  const stock = await getStockStatus();
   const stockMap = {};
   for (const s of stock) stockMap[s.id] = s;
-  const items = menuForNextDays(days);
+  const items = await menuForNextDays(days);
   const need = {};
   for (const it of items) {
     if (!need[it.food_id]) need[it.food_id] = { name: it.food_name, qty: 0, unit: it.unit, price: it.avg_price };
@@ -116,13 +116,13 @@ function hasAny(str, keywords) {
 }
 
 // Gera a resposta para uma pergunta
-export function askAI(question, userId = null) {
+export async function askAI(question, userId = null) {
   const q = normalize(question);
   let answer = '';
 
   try {
     if (hasAny(q, ['acabando', 'estoque baixo', 'abaixo do minimo', 'faltando', 'falta'])) {
-      const lows = getLowStock();
+      const lows = await getLowStock();
       if (!lows.length) {
         answer = 'Nenhum alimento esta abaixo do estoque minimo no momento. Todos os itens estao com quantidade adequada.';
       } else {
@@ -135,7 +135,7 @@ export function askAI(question, userId = null) {
       }
     } else if (hasAny(q, ['comprar', 'compra', 'proxima semana', 'proximo mes', 'preciso']) && hasAny(q, ['semana', 'mes', 'comprar', 'compra', 'preciso'])) {
       const period = hasAny(q, ['mes']) ? 30 : 7;
-      const items = shoppingRecommendation(period);
+      const items = await shoppingRecommendation(period);
       const toBuy = items.filter((i) => i.toBuy > 0);
       if (!toBuy.length) {
         answer = `Com o estoque atual e possivel atender o cardapio dos proximos ${period} dias. Nenhuma compra urgente necessaria.`;
@@ -154,7 +154,7 @@ export function askAI(question, userId = null) {
       const t = today();
       const st = startOfMonth(t);
       const en = endOfMonth(t);
-      const waste = query(`
+      const waste = await query(`
         SELECT f.name, f.unit, SUM(w.quantity) AS qty, SUM(w.estimated_cost) AS cost
         FROM waste w JOIN foods f ON f.id = w.food_id
         WHERE w.date BETWEEN ? AND ?
@@ -177,8 +177,8 @@ export function askAI(question, userId = null) {
     } else if (hasAny(q, ['gast', 'gasto', 'gastamos', 'gastou', 'quanto gast']) && !hasAny(q, ['ano', 'anual', 'orcamento'])) {
       const t = today();
       const mp = monthKey(t);
-      const spent = getMonthSpending(mp);
-      const budget = get(`SELECT amount FROM budgets WHERE period='mes' AND period_value=?`, [mp]);
+      const spent = await getMonthSpending(mp);
+      const budget = await get(`SELECT amount FROM budgets WHERE period='mes' AND period_value=?`, [mp]);
       let out = `**Gasto do mes de ${MONTHS_PT[Number(mp.slice(5)) - 1]}/${mp.slice(0, 4)}:** ${formatCurrency(spent)}.\n`;
       if (budget) {
         out += `\nO orcamento mensal e de **${formatCurrency(budget.amount)}**. Voce utilizou **${pct(spent, budget.amount)}%** do limite (${formatCurrency(budget.amount - spent)} disponiveis).`;
@@ -187,8 +187,8 @@ export function askAI(question, userId = null) {
       answer = out;
     } else if (hasAny(q, ['gast', 'ano', 'anual', 'orcamento', 'orçamento'])) {
       const y = yearKey(today());
-      const spent = get(`SELECT COALESCE(SUM(amount),0) AS total FROM expenses WHERE substr(expense_date,1,4)=?`, [y]).total;
-      const budget = get(`SELECT amount FROM budgets WHERE period='ano' AND period_value=?`, [y]);
+      const spent = (await get(`SELECT COALESCE(SUM(amount),0) AS total FROM expenses WHERE substr(expense_date,1,4)=?`, [y])).total;
+      const budget = await get(`SELECT amount FROM budgets WHERE period='ano' AND period_value=?`, [y]);
       let out = `**Gasto do ano ${y}:** ${formatCurrency(spent)}.\n`;
       if (budget) {
         const avail = budget.amount - spent;
@@ -201,7 +201,7 @@ export function askAI(question, userId = null) {
       out += `\n\nCalculo: somei todas as despesas do ano e comparei com o orcamento cadastrado.`;
       answer = out;
     } else if (hasAny(q, ['custo', 'refeicao', 'custo medio', 'custo estimado', 'custo medio por refeicao'])) {
-      const info = getAvgCostPerMeal();
+      const info = await getAvgCostPerMeal();
       if (!info) {
         answer = 'Nao ha refeicoes realizadas neste mes para calcular o custo medio.';
       } else {
@@ -212,7 +212,7 @@ export function askAI(question, userId = null) {
         answer += `\nCalculo: dividi o gasto total do mes (${formatCurrency(info.expense)}) pela quantidade de refeicoes servidas (${formatNumber(info.students)}).`;
       }
     } else if (hasAny(q, ['vence', 'validade', 'vencimento', 'proximos do vencimento', 'vencendo', 'proximo do vencimento'])) {
-      const exp = getExpiringBatches();
+      const exp = await getExpiringBatches();
       if (!exp.length) {
         answer = 'Nenhum alimento vencido ou proximo do vencimento (ate 30 dias).';
       } else {
@@ -228,7 +228,7 @@ export function askAI(question, userId = null) {
       }
     } else if (hasAny(q, ['mes com maior', 'maior consumo', 'maior gasto', 'qual mes', 'mes com maior'])) {
       const y = yearKey(today());
-      const rows = query(`
+      const rows = await query(`
         SELECT substr(m.date,1,7) AS month, SUM(m.served_students) AS meals FROM meals m
         WHERE substr(m.date,1,4)=? GROUP BY month ORDER BY meals DESC
       `, [y]);
@@ -241,11 +241,11 @@ export function askAI(question, userId = null) {
         answer += `\n\nCalculo: agrupei as refeicoes realizadas por mes e ordenei de forma decrescente.`;
       }
     } else if (hasAny(q, ['cardapio', 'proxima semana', 'estoque atual', 'realizar', 'consegue', 'viabil'])) {
-      const items = menuForNextDays(7);
+      const items = await menuForNextDays(7);
       if (!items.length) {
         answer = 'Nao ha cardapio planejado para os proximos 7 dias.';
       } else {
-        const stock = getStockStatus();
+        const stock = await getStockStatus();
         const stockMap = {};
         for (const s of stock) stockMap[s.id] = s;
         const need = {};
@@ -269,7 +269,7 @@ export function askAI(question, userId = null) {
         }
       }
     } else if (hasAny(q, ['planejar', 'plano', 'planejamento', 'analisar', 'proximo mes', 'previsao', 'previsão'])) {
-      const recs = shoppingRecommendation(30);
+      const recs = await shoppingRecommendation(30);
       const toBuy = recs.filter((i) => i.toBuy > 0);
       let out = `**Analise do proximo mes (30 dias):**\n\n`;
       if (toBuy.length) {
@@ -283,14 +283,14 @@ export function askAI(question, userId = null) {
       } else {
         out += `Estoque suficiente para o proximo mes. Nenhuma compra urgente.\n`;
       }
-      const exp = getExpiringBatches();
-      const lows = getLowStock();
+      const exp = await getExpiringBatches();
+      const lows = await getLowStock();
       if (exp.length) out += `\nATENCAO: ${exp.length} lote(s) vencendo ou proximos do vencimento. **Priorize o uso FEFO.**\n`;
       if (lows.length) out += `\nEstoque critico: ${lows.map((l) => l.name).join(', ')}.\n`;
       out += `\nPlanejamento gerado a partir do cardapio futuro, estoque, consumo historico, validades e orcamento.`;
       answer = out;
     } else if (hasAny(q, ['alimento mais', 'mais utilizad', 'mais consumid', 'quais alimentos mais'])) {
-      const top = getYearConsumptionByFood();
+      const top = await getYearConsumptionByFood();
       if (!top.length) {
         answer = 'Nao ha consumo registrado no ano.';
       } else {
@@ -309,7 +309,7 @@ export function askAI(question, userId = null) {
   }
 
   // Registra a conversa
-  run(
+  await run(
     `INSERT INTO ai_conversations (user_id, question, answer) VALUES (?,?,?)`,
     [userId, question, answer]
   );
@@ -318,38 +318,38 @@ export function askAI(question, userId = null) {
 }
 
 // Analise completa do proximo mes (relatorio estruturado)
-export function analyzeNextMonth() {
+export async function analyzeNextMonth() {
   const t = today();
   const y = yearKey(t);
   const nextMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1);
   const nmKey = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`;
   const monthName = `${MONTHS_PT[nextMonth.getMonth()]}/${nextMonth.getFullYear()}`;
 
-  const recs = shoppingRecommendation(30);
+  const recs = await shoppingRecommendation(30);
   const totalBuy = recs.filter((i) => i.toBuy > 0).reduce((a, b) => a + (b.toBuy || 0), 0);
   const totalCost = recs.filter((i) => i.toBuy > 0).reduce((a, b) => a + (b.toBuy * (b.price || 0)), 0);
 
-  const expiring = getExpiringBatches();
-  const lows = getLowStock();
+  const expiring = await getExpiringBatches();
+  const lows = await getLowStock();
 
-  const menusCount = get(`SELECT COUNT(*) AS c FROM menus WHERE status='planejado' AND date >= ?`, [t]).c;
+  const menusCount = (await get(`SELECT COUNT(*) AS c FROM menus WHERE status='planejado' AND date >= ?`, [t])).c;
 
   const lastMonthStart = startOfMonth(addDays(t, -30));
   const lastMonthEnd = t;
-  const dailyAvgConsumption = get(`
+  const dailyAvgConsumption = (await get(`
     SELECT AVG(cnt) AS avg FROM (
       SELECT date, COUNT(*) AS cnt FROM meals WHERE date BETWEEN ? AND ? GROUP BY date
-    )
-  `, [lastMonthStart, lastMonthEnd]).avg || 0;
+    ) sd
+  `, [lastMonthStart, lastMonthEnd])).avg || 0;
 
-  const budgetMonth = get(`SELECT amount FROM budgets WHERE period='mes' AND period_value=?`, [nmKey]);
+  const budgetMonth = await get(`SELECT amount FROM budgets WHERE period='mes' AND period_value=?`, [nmKey]);
 
-  const costPerMeal = getAvgCostPerMeal();
+  const costPerMeal = await getAvgCostPerMeal();
 
   return {
     label: monthName,
     monthKey: nmKey,
-    totalStudents: get(`SELECT COALESCE(SUM(total_students),0) AS total FROM students_summary WHERE school_year=?`, [y]).total,
+    totalStudents: (await get(`SELECT COALESCE(SUM(total_students),0) AS total FROM students_summary WHERE school_year=?`, [y])).total,
     plannedMenus: menusCount,
     dailyAvgConsumption: Math.round(dailyAvgConsumption),
     shoppingList: recs.filter((i) => i.toBuy > 0),
@@ -361,9 +361,8 @@ export function analyzeNextMonth() {
     lowStockCount: lows.length,
     lowStock: lows,
     costPerMeal: costPerMeal ? costPerMeal.costPerMeal : null,
-    lastMonthSpent: getMonthSpending(monthKey(addDays(t, -30))),
+    lastMonthSpent: await getMonthSpending(monthKey(addDays(t, -30))),
   };
 }
 
 export default { askAI, analyzeNextMonth };
-

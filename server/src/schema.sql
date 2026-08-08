@@ -1,422 +1,454 @@
 -- ============================================================
 -- Sistema Web de Gestão da Alimentação Escolar
--- Banco de Dados SQLite — Schema Completo
+-- Banco de Dados MySQL — Schema Completo
 -- ============================================================
 
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
+SET FOREIGN_KEY_CHECKS = 0;
 
 -- ------------------------------------------------------------
 -- USUÁRIOS, PAPÉIS E PERMISSÕES
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS roles (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100) NOT NULL UNIQUE,
   description TEXT
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  email TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
-  role_id INTEGER NOT NULL REFERENCES roles(id),
-  active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(200) NOT NULL,
+  email VARCHAR(200) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  role_id INT NOT NULL,
+  active TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_users_role (role_id),
+  CONSTRAINT fk_users_role FOREIGN KEY (role_id) REFERENCES roles(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS permissions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  role_id INTEGER NOT NULL REFERENCES roles(id),
-  module TEXT NOT NULL,
-  can_view INTEGER NOT NULL DEFAULT 1,
-  can_create INTEGER NOT NULL DEFAULT 0,
-  can_edit INTEGER NOT NULL DEFAULT 0,
-  can_delete INTEGER NOT NULL DEFAULT 0,
-  UNIQUE(role_id, module)
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  role_id INT NOT NULL,
+  module VARCHAR(100) NOT NULL,
+  can_view TINYINT NOT NULL DEFAULT 1,
+  can_create TINYINT NOT NULL DEFAULT 0,
+  can_edit TINYINT NOT NULL DEFAULT 0,
+  can_delete TINYINT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_permissions_role_module (role_id, module),
+  CONSTRAINT fk_permissions_role FOREIGN KEY (role_id) REFERENCES roles(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
 -- ESCOLA E ALUNOS
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS school_profile (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  address TEXT,
-  city TEXT,
-  state TEXT,
-  cnpj TEXT,
-  phone TEXT,
-  email TEXT,
-  school_year INTEGER NOT NULL,
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(200) NOT NULL,
+  address VARCHAR(300),
+  city VARCHAR(100),
+  state VARCHAR(2),
+  cnpj VARCHAR(20),
+  phone VARCHAR(30),
+  email VARCHAR(100),
+  school_year INT NOT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS students_summary (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  school_year INTEGER NOT NULL,
-  shift TEXT NOT NULL,               -- manha | tarde | integral
-  total_students INTEGER NOT NULL DEFAULT 0,
-  estimated_meals_per_day INTEGER NOT NULL DEFAULT 0,
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  school_year INT NOT NULL,
+  shift VARCHAR(20) NOT NULL,
+  total_students INT NOT NULL DEFAULT 0,
+  estimated_meals_per_day INT NOT NULL DEFAULT 0,
   notes TEXT,
-  UNIQUE(school_year, shift)
-);
+  UNIQUE KEY uq_students_year_shift (school_year, shift)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
 -- CALENDÁRIO ESCOLAR
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS school_calendar (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  school_year INTEGER NOT NULL,
-  date TEXT NOT NULL,                -- YYYY-MM-DD
-  day_type TEXT NOT NULL DEFAULT 'letivo',  -- letivo | ferias | feriado | recesso | evento | sem_alimentacao
-  description TEXT,
-  UNIQUE(school_year, date)
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  school_year INT NOT NULL,
+  date DATE NOT NULL,
+  day_type VARCHAR(30) NOT NULL DEFAULT 'letivo',
+  description VARCHAR(300),
+  UNIQUE KEY uq_calendar_year_date (school_year, date),
+  KEY idx_calendar_year (school_year)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
 -- CATEGORIAS E ALIMENTOS
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS food_categories (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100) NOT NULL UNIQUE,
   description TEXT
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS foods (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  category_id INTEGER REFERENCES food_categories(id),
-  unit TEXT NOT NULL DEFAULT 'kg',   -- kg | g | L | mL | un
-  photo TEXT,
-  barcode TEXT UNIQUE,
-  brand TEXT,
-  storage_location TEXT,
-  avg_price REAL DEFAULT 0,
-  min_stock REAL DEFAULT 0,
-  ideal_stock REAL DEFAULT 0,
-  active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- ------------------------------------------------------------
--- ESTOQUE E LOTES (FEFO)
--- ------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS food_batches (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  food_id INTEGER NOT NULL REFERENCES foods(id),
-  batch_number TEXT,
-  quantity REAL NOT NULL DEFAULT 0,
-  entry_date TEXT NOT NULL DEFAULT (date('now')),
-  expiry_date TEXT,
-  supplier_id INTEGER,
-  cost REAL DEFAULT 0,
-  unit_cost REAL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS stock (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  food_id INTEGER NOT NULL REFERENCES foods(id),
-  quantity REAL NOT NULL DEFAULT 0,
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(food_id)
-);
-
-CREATE TABLE IF NOT EXISTS stock_movements (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  food_id INTEGER NOT NULL REFERENCES foods(id),
-  batch_id INTEGER REFERENCES food_batches(id),
-  movement_type TEXT NOT NULL,       -- entrada | saida | ajuste
-  reason TEXT NOT NULL,              -- compra | doacao | transferencia | reposicao | outro | refeicao | perda | desperdicio | vencido | danificado | ajuste
-  quantity REAL NOT NULL,
-  unit_cost REAL DEFAULT 0,
-  total_cost REAL DEFAULT 0,
-  reference_type TEXT,
-  reference_id INTEGER,
-  responsible TEXT,
-  notes TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(200) NOT NULL,
+  category_id INT NULL,
+  unit VARCHAR(10) NOT NULL DEFAULT 'kg',
+  photo VARCHAR(500),
+  barcode VARCHAR(100) NULL UNIQUE,
+  brand VARCHAR(200),
+  storage_location VARCHAR(200),
+  avg_price DECIMAL(12,2) DEFAULT 0,
+  min_stock DECIMAL(12,3) DEFAULT 0,
+  ideal_stock DECIMAL(12,3) DEFAULT 0,
+  active TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_foods_category FOREIGN KEY (category_id) REFERENCES food_categories(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
 -- FORNECEDORES
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS suppliers (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  cnpj TEXT,
-  phone TEXT,
-  email TEXT,
-  address TEXT,
-  products_supplied TEXT,
-  active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(200) NOT NULL,
+  cnpj VARCHAR(20),
+  phone VARCHAR(30),
+  email VARCHAR(100),
+  address VARCHAR(300),
+  products_supplied VARCHAR(500),
+  active TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- ESTOQUE E LOTES (FEFO)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS food_batches (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  food_id INT NOT NULL,
+  batch_number VARCHAR(100),
+  quantity DECIMAL(12,3) NOT NULL DEFAULT 0,
+  entry_date DATE NOT NULL DEFAULT (CURRENT_DATE),
+  expiry_date DATE NULL,
+  supplier_id INT NULL,
+  cost DECIMAL(12,2) DEFAULT 0,
+  unit_cost DECIMAL(12,2) DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_food_batches_food (food_id),
+  KEY idx_food_batches_expiry (expiry_date),
+  CONSTRAINT fk_batches_food FOREIGN KEY (food_id) REFERENCES foods(id),
+  CONSTRAINT fk_batches_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS stock (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  food_id INT NOT NULL,
+  quantity DECIMAL(12,3) NOT NULL DEFAULT 0,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_stock_food (food_id),
+  CONSTRAINT fk_stock_food FOREIGN KEY (food_id) REFERENCES foods(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS stock_movements (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  food_id INT NOT NULL,
+  batch_id INT NULL,
+  movement_type VARCHAR(20) NOT NULL,
+  reason VARCHAR(40) NOT NULL,
+  quantity DECIMAL(12,3) NOT NULL,
+  unit_cost DECIMAL(12,2) DEFAULT 0,
+  total_cost DECIMAL(12,2) DEFAULT 0,
+  reference_type VARCHAR(40),
+  reference_id INT NULL,
+  responsible VARCHAR(200),
+  notes VARCHAR(300),
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_movements_food (food_id),
+  KEY idx_movements_created (created_at),
+  CONSTRAINT fk_movements_food FOREIGN KEY (food_id) REFERENCES foods(id),
+  CONSTRAINT fk_movements_batch FOREIGN KEY (batch_id) REFERENCES food_batches(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS supplier_prices (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
-  food_id INTEGER NOT NULL REFERENCES foods(id),
-  price REAL NOT NULL,
-  date TEXT NOT NULL DEFAULT (date('now')),
-  notes TEXT
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  supplier_id INT NOT NULL,
+  food_id INT NOT NULL,
+  price DECIMAL(12,2) NOT NULL,
+  date DATE NOT NULL DEFAULT (CURRENT_DATE),
+  notes TEXT,
+  CONSTRAINT fk_sprices_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+  CONSTRAINT fk_sprices_food FOREIGN KEY (food_id) REFERENCES foods(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
 -- COMPRAS
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS purchases (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  supplier_id INTEGER REFERENCES suppliers(id),
-  purchase_date TEXT NOT NULL DEFAULT (date('now')),
-  invoice_number TEXT,
-  total REAL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'concluida',  -- planejada | pedida | concluida
-  notes TEXT,
-  responsible TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  supplier_id INT NULL,
+  purchase_date DATE NOT NULL DEFAULT (CURRENT_DATE),
+  invoice_number VARCHAR(50),
+  total DECIMAL(12,2) DEFAULT 0,
+  status VARCHAR(20) NOT NULL DEFAULT 'concluida',
+  notes VARCHAR(300),
+  responsible VARCHAR(200),
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_purchases_date (purchase_date),
+  CONSTRAINT fk_purchases_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS purchase_items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  purchase_id INTEGER NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
-  food_id INTEGER NOT NULL REFERENCES foods(id),
-  quantity REAL NOT NULL,
-  unit_cost REAL DEFAULT 0,
-  total REAL DEFAULT 0
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  purchase_id INT NOT NULL,
+  food_id INT NOT NULL,
+  quantity DECIMAL(12,3) NOT NULL,
+  unit_cost DECIMAL(12,2) DEFAULT 0,
+  total DECIMAL(12,2) DEFAULT 0,
+  CONSTRAINT fk_pitems_purchase FOREIGN KEY (purchase_id) REFERENCES purchases(id) ON DELETE CASCADE,
+  CONSTRAINT fk_pitems_food FOREIGN KEY (food_id) REFERENCES foods(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS shopping_list (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  food_id INTEGER NOT NULL REFERENCES foods(id),
-  quantity REAL NOT NULL,
-  reason TEXT,
-  status TEXT NOT NULL DEFAULT 'pendente',  -- pendente | comprado | descartado
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(food_id, status)
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  food_id INT NOT NULL,
+  quantity DECIMAL(12,3) NOT NULL,
+  reason VARCHAR(300),
+  status VARCHAR(20) NOT NULL DEFAULT 'pendente',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_shopping_food_status (food_id, status),
+  CONSTRAINT fk_shopping_food FOREIGN KEY (food_id) REFERENCES foods(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
 -- CARDÁPIOS E REFEIÇÕES
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS meal_types (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,          -- lanche_manha | almoco | lanche_tarde | jantar
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100) NOT NULL UNIQUE,
   description TEXT
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS menus (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  date TEXT NOT NULL,
-  meal_type_id INTEGER NOT NULL REFERENCES meal_types(id),
-  title TEXT,
-  expected_students INTEGER DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'planejado',  -- planejado | confirmado | realizado | cancelado
-  planned_cost REAL DEFAULT 0,
-  notes TEXT,
-  created_by INTEGER REFERENCES users(id),
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  date DATE NOT NULL,
+  meal_type_id INT NOT NULL,
+  title VARCHAR(200),
+  expected_students INT DEFAULT 0,
+  status VARCHAR(30) NOT NULL DEFAULT 'planejado',
+  planned_cost DECIMAL(12,2) DEFAULT 0,
+  notes VARCHAR(300),
+  created_by INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_menus_date (date),
+  CONSTRAINT fk_menus_mealtype FOREIGN KEY (meal_type_id) REFERENCES meal_types(id),
+  CONSTRAINT fk_menus_user FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS menu_items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  menu_id INTEGER NOT NULL REFERENCES menus(id) ON DELETE CASCADE,
-  food_id INTEGER NOT NULL REFERENCES foods(id),
-  portion_per_student REAL DEFAULT 0,  -- em unidades do alimento (kg, g, un...)
-  total_quantity REAL DEFAULT 0
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  menu_id INT NOT NULL,
+  food_id INT NOT NULL,
+  portion_per_student DECIMAL(12,4) DEFAULT 0,
+  total_quantity DECIMAL(12,3) DEFAULT 0,
+  CONSTRAINT fk_menuitems_menu FOREIGN KEY (menu_id) REFERENCES menus(id) ON DELETE CASCADE,
+  CONSTRAINT fk_menuitems_food FOREIGN KEY (food_id) REFERENCES foods(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
 -- FICHAS TÉCNICAS (RECEITAS)
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS recipes (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  meal_type_id INTEGER REFERENCES meal_types(id),
-  servings INTEGER DEFAULT 1,
-  yield_amount REAL DEFAULT 0,
-  yield_unit TEXT,
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(200) NOT NULL,
+  meal_type_id INT NULL,
+  servings INT DEFAULT 1,
+  yield_amount DECIMAL(12,3) DEFAULT 0,
+  yield_unit VARCHAR(20),
   instructions TEXT,
   observations TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_recipes_mealtype FOREIGN KEY (meal_type_id) REFERENCES meal_types(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS recipe_ingredients (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  recipe_id INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
-  food_id INTEGER NOT NULL REFERENCES foods(id),
-  quantity_per_serving REAL DEFAULT 0,   -- por porção/pessoa
-  unit TEXT DEFAULT 'kg',
-  notes TEXT
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  recipe_id INT NOT NULL,
+  food_id INT NOT NULL,
+  quantity_per_serving DECIMAL(12,4) DEFAULT 0,
+  unit VARCHAR(10) DEFAULT 'kg',
+  notes VARCHAR(300),
+  CONSTRAINT fk_ringredients_recipe FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ringredients_food FOREIGN KEY (food_id) REFERENCES foods(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
 -- REFEIÇÕES REALIZADAS (CONSUMO)
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS meals (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  menu_id INTEGER REFERENCES menus(id),
-  meal_type_id INTEGER NOT NULL REFERENCES meal_types(id),
-  date TEXT NOT NULL DEFAULT (date('now')),
-  planned_students INTEGER DEFAULT 0,
-  served_students INTEGER DEFAULT 0,
-  recipe_id INTEGER REFERENCES recipes(id),
-  status TEXT NOT NULL DEFAULT 'realizado',
-  notes TEXT,
-  registered_by INTEGER REFERENCES users(id),
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  menu_id INT NULL,
+  meal_type_id INT NOT NULL,
+  date DATE NOT NULL DEFAULT (CURRENT_DATE),
+  planned_students INT DEFAULT 0,
+  served_students INT DEFAULT 0,
+  recipe_id INT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'realizado',
+  notes VARCHAR(500),
+  registered_by INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_meals_date (date),
+  CONSTRAINT fk_meals_menu FOREIGN KEY (menu_id) REFERENCES menus(id),
+  CONSTRAINT fk_meals_mealtype FOREIGN KEY (meal_type_id) REFERENCES meal_types(id),
+  CONSTRAINT fk_meals_recipe FOREIGN KEY (recipe_id) REFERENCES recipes(id),
+  CONSTRAINT fk_meals_user FOREIGN KEY (registered_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS meal_consumption (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  meal_id INTEGER NOT NULL REFERENCES meals(id) ON DELETE CASCADE,
-  food_id INTEGER NOT NULL REFERENCES foods(id),
-  quantity REAL NOT NULL,
-  unit TEXT DEFAULT 'kg',
-  planned_quantity REAL DEFAULT 0,
-  batch_id INTEGER REFERENCES food_batches(id)
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  meal_id INT NOT NULL,
+  food_id INT NOT NULL,
+  quantity DECIMAL(12,3) NOT NULL,
+  unit VARCHAR(10) DEFAULT 'kg',
+  planned_quantity DECIMAL(12,3) DEFAULT 0,
+  batch_id INT NULL,
+  CONSTRAINT fk_mconsumption_meal FOREIGN KEY (meal_id) REFERENCES meals(id) ON DELETE CASCADE,
+  CONSTRAINT fk_mconsumption_food FOREIGN KEY (food_id) REFERENCES foods(id),
+  CONSTRAINT fk_mconsumption_batch FOREIGN KEY (batch_id) REFERENCES food_batches(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
 -- DESPERDÍCIO E SOBRAS
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS waste (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  food_id INTEGER NOT NULL REFERENCES foods(id),
-  quantity REAL NOT NULL,
-  unit TEXT DEFAULT 'kg',
-  reason TEXT NOT NULL,   -- excesso_producao | vencimento | preparo | armazenamento | sobras | danificado
-  date TEXT NOT NULL DEFAULT (date('now')),
-  meal_id INTEGER REFERENCES meals(id),
-  estimated_cost REAL DEFAULT 0,
-  responsible TEXT,
-  notes TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  food_id INT NOT NULL,
+  quantity DECIMAL(12,3) NOT NULL,
+  unit VARCHAR(10) DEFAULT 'kg',
+  reason VARCHAR(40) NOT NULL,
+  date DATE NOT NULL DEFAULT (CURRENT_DATE),
+  meal_id INT NULL,
+  estimated_cost DECIMAL(12,2) DEFAULT 0,
+  responsible VARCHAR(200),
+  notes VARCHAR(300),
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_waste_date (date),
+  CONSTRAINT fk_waste_food FOREIGN KEY (food_id) REFERENCES foods(id),
+  CONSTRAINT fk_waste_meal FOREIGN KEY (meal_id) REFERENCES meals(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS leftovers (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  meal_id INTEGER REFERENCES meals(id),
-  date TEXT NOT NULL DEFAULT (date('now')),
-  meal_type_id INTEGER REFERENCES meal_types(id),
-  prepared_quantity INTEGER DEFAULT 0,
-  served_quantity INTEGER DEFAULT 0,
-  remaining_quantity INTEGER DEFAULT 0,
-  discarded_quantity INTEGER DEFAULT 0,
-  notes TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  meal_id INT NULL,
+  date DATE NOT NULL DEFAULT (CURRENT_DATE),
+  meal_type_id INT NULL,
+  prepared_quantity INT DEFAULT 0,
+  served_quantity INT DEFAULT 0,
+  remaining_quantity INT DEFAULT 0,
+  discarded_quantity INT DEFAULT 0,
+  notes VARCHAR(300),
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_leftovers_meal FOREIGN KEY (meal_id) REFERENCES meals(id),
+  CONSTRAINT fk_leftovers_mealtype FOREIGN KEY (meal_type_id) REFERENCES meal_types(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
 -- FINANCEIRO E ORÇAMENTO
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS expense_categories (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,  -- alimentos | bebidas | gas | materiais_cozinha | produtos_limpeza | equipamentos | transporte | outros
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100) NOT NULL UNIQUE,
   description TEXT
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS expenses (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  category_id INTEGER NOT NULL REFERENCES expense_categories(id),
-  description TEXT NOT NULL,
-  amount REAL NOT NULL,
-  expense_date TEXT NOT NULL DEFAULT (date('now')),
-  supplier_id INTEGER REFERENCES suppliers(id),
-  payment_method TEXT,
-  responsible TEXT,
-  notes TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  category_id INT NOT NULL,
+  description VARCHAR(300) NOT NULL,
+  amount DECIMAL(12,2) NOT NULL,
+  expense_date DATE NOT NULL DEFAULT (CURRENT_DATE),
+  supplier_id INT NULL,
+  payment_method VARCHAR(30),
+  responsible VARCHAR(200),
+  notes VARCHAR(300),
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_expenses_date (expense_date),
+  CONSTRAINT fk_expenses_category FOREIGN KEY (category_id) REFERENCES expense_categories(id),
+  CONSTRAINT fk_expenses_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS budgets (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  school_year INTEGER NOT NULL,
-  period TEXT NOT NULL DEFAULT 'ano',  -- ano | mes | categoria
-  period_value TEXT,                    -- YYYY ou YYYY-MM ou id categoria
-  amount REAL NOT NULL,
-  notes TEXT,
-  UNIQUE(school_year, period, period_value)
-);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  school_year INT NOT NULL,
+  period VARCHAR(20) NOT NULL DEFAULT 'ano',
+  period_value VARCHAR(20),
+  amount DECIMAL(12,2) NOT NULL,
+  notes VARCHAR(300),
+  UNIQUE KEY uq_budgets (school_year, period, period_value)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
 -- NOTIFICAÇÕES E ALERTAS
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS notifications (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  type TEXT NOT NULL,               -- estoque | validade | planejamento | financeiro
-  severity TEXT NOT NULL DEFAULT 'info',  -- info | warning | danger
-  title TEXT NOT NULL,
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  type VARCHAR(30) NOT NULL,
+  severity VARCHAR(10) NOT NULL DEFAULT 'info',
+  title VARCHAR(200) NOT NULL,
   message TEXT,
-  reference_type TEXT,
-  reference_id INTEGER,
-  read INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+  reference_type VARCHAR(40),
+  reference_id INT NULL,
+  read TINYINT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_notifications_read (read)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
 -- AUDITORIA
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS audit_logs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER REFERENCES users(id),
-  user_name TEXT,
-  action TEXT NOT NULL,
-  module TEXT NOT NULL,
-  entity_type TEXT,
-  entity_id INTEGER,
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NULL,
+  user_name VARCHAR(200),
+  action VARCHAR(50) NOT NULL,
+  module VARCHAR(50) NOT NULL,
+  entity_type VARCHAR(50),
+  entity_id INT NULL,
   old_value TEXT,
   new_value TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_audit_created (created_at),
+  CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
 -- CONVERSAS COM IA
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS ai_conversations (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER REFERENCES users(id),
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NULL,
   question TEXT NOT NULL,
   answer TEXT NOT NULL,
   context TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_ai_user (user_id),
+  CONSTRAINT fk_ai_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
 -- TENTATIVAS DE LOGIN (anti brute-force)
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS login_attempts (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  email TEXT NOT NULL,
-  ip TEXT,
-  success INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_login_attempts_email ON login_attempts(email);
-CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts(ip);
-CREATE INDEX IF NOT EXISTS idx_login_attempts_created ON login_attempts(created_at);
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(200) NOT NULL,
+  ip VARCHAR(100),
+  success TINYINT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_login_attempts_email (email),
+  KEY idx_login_attempts_ip (ip),
+  KEY idx_login_attempts_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- ------------------------------------------------------------
--- ÍNDICES
--- ------------------------------------------------------------
-CREATE INDEX IF NOT EXISTS idx_users_role ON users(role_id);
-CREATE INDEX IF NOT EXISTS idx_food_batches_food ON food_batches(food_id);
-CREATE INDEX IF NOT EXISTS idx_food_batches_expiry ON food_batches(expiry_date);
-CREATE INDEX IF NOT EXISTS idx_movements_food ON stock_movements(food_id);
-CREATE INDEX IF NOT EXISTS idx_movements_created ON stock_movements(created_at);
-CREATE INDEX IF NOT EXISTS idx_menus_date ON menus(date);
-CREATE INDEX IF NOT EXISTS idx_meals_date ON meals(date);
-CREATE INDEX IF NOT EXISTS idx_waste_date ON waste(date);
-CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date);
-CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases(purchase_date);
-CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
-CREATE INDEX IF NOT EXISTS idx_ai_user ON ai_conversations(user_id);
-CREATE INDEX IF NOT EXISTS idx_calendar_year ON school_calendar(school_year);
-CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read);
-
+SET FOREIGN_KEY_CHECKS = 1;

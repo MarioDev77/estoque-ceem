@@ -12,7 +12,7 @@ export function fail(res, message, status = 400, detail = '') {
 // Suporta dois formatos:
 //   audit(req, { action, module, ... })           -> usa req.user
 //   audit({ userId, action, module, ... })        -> já inclui userId
-export function audit(req, opts) {
+export async function audit(req, opts) {
   if (opts && opts.action !== undefined && !req) {
     // Formato 2: primeiro argumento é o objeto completo
     return auditLog({

@@ -44,7 +44,9 @@ Sistema completo, profissional e responsivo para o gerenciamento da alimentaçã
 ## 🚀 Como executar
 
 ### Pré-requisitos
-- Node.js **20.19+** ou **22.12+** (usa o módulo nativo `node:sqlite` — Node 22+ recomendado)
+- Node.js **18+** (recomendado 20+)
+- MySQL **8+** (banco de dados)
+- URL de conexão MySQL (ex.: provida pelo Railway via `MYSQL_PRIVATE_URL`)
 
 ### Instalação
 
@@ -86,17 +88,24 @@ npm run dev:client
 
 ## 🗄️ Banco de Dados
 
-SQLite (`server/data/escola.db`), criado automaticamente com o schema completo:
+MySQL **8+**. O schema é criado automaticamente na inicialização (via `MYSQL_PRIVATE_URL` / `MYSQL_URL` / `DATABASE_URL` no `.env`) com o schema completo:
 
 `users`, `roles`, `permissions`, `students_summary`, `school_calendar`, `meals`, `menus`, `recipes`, `recipe_ingredients`, `foods`, `food_categories`, `food_batches`, `stock`, `stock_movements`, `suppliers`, `purchases`, `purchase_items`, `expenses`, `budgets`, `waste`, `leftovers`, `notifications`, `audit_logs`, `ai_conversations`.
 
 Com chaves estrangeiras, índices, constraints e timestamps.
 
+> **Configuração:** defina a variável de ambiente da conexão no arquivo `server/.env`:
+> ```
+> MYSQL_PRIVATE_URL="mysql://usuario:senha@host:3306/nome_do_banco"
+> JWT_SECRET="seu-segredo-forte"
+> PORT=3001
+> ```
+
 ---
 
 ## 🛠️ Stack Técnica
 
-- **Backend:** Node.js, Express, SQLite (`node:sqlite`), JWT, bcryptjs, helmet, express-rate-limit
+- **Backend:** Node.js, Express, **MySQL** (`mysql2`), JWT, bcryptjs, helmet, express-rate-limit
 - **Frontend:** React 18, Vite, React Router, Chart.js, html5-qrcode (scanner), jsPDF + xlsx (relatórios), lucide-react
 - **Segurança:** consultas parametrizadas (anti SQL Injection), sanitização de entradas (anti XSS), JWT, rate limiting, logs de auditoria, variáveis de ambiente (`.env`)
 
@@ -108,14 +117,13 @@ Com chaves estrangeiras, índices, constraints e timestamps.
 ├── server/               # Backend (API Express)
 │   ├── src/
 │   │   ├── index.js      # Ponto de entrada + segurança
-│   │   ├── db.js         # SQLite + helpers de query
-│   │   ├── schema.sql    # Tabelas, FKs, índices
+│   │   ├── db.js         # MySQL + helpers de query (pool mysql2)
+│   │   ├── schema.sql    # Tabelas MySQL, FKs, índices
 │   │   ├── auth.js       # JWT + permissões
 │   │   ├── seed.js       # Dados de demonstração realistas
 │   │   ├── utils.js      # Datas, períodos, cálculos
 │   │   ├── services/     # IA, auditoria, notificações
 │   │   └── routes/       # Todas as rotas da API
-│   └── data/             # Banco SQLite (criado automaticamente)
 └── client/               # Frontend (React)
     └── src/
         ├── pages/        # 23 páginas

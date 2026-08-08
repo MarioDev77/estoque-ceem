@@ -3,9 +3,9 @@
 // Gera dados relativos à data atual para que o dashboard
 // sempre exiba gráficos e indicadores com dados reais.
 // ============================================================
-import { db, transaction, run, get, query, today } from './db.js';
+import { transaction, run, get, query, today, lastId } from './db.js';
 import { hashPassword } from './auth.js';
-import { addDays, monthKey } from './utils.js';
+import { addDays } from './utils.js';
 
 const YEAR = new Date().getFullYear();
 const NOW = today();
@@ -29,11 +29,11 @@ function round1(n) {
 }
 
 // ------------------------------------------------------------
-function seedRoles() {
-  run(`INSERT OR IGNORE INTO roles (id, name, description) VALUES (1, 'Administrador', 'Acesso completo')`);
-  run(`INSERT OR IGNORE INTO roles (id, name, description) VALUES (2, 'Nutrição', 'Cardápio, fichas, consumo, estoque, relatórios')`);
-  run(`INSERT OR IGNORE INTO roles (id, name, description) VALUES (3, 'Cantina', 'Estoque, entrada, saída, consumo, scanner')`);
-  run(`INSERT OR IGNORE INTO roles (id, name, description) VALUES (4, 'Direção', 'Dashboard, financeiro, relatórios, indicadores')`);
+async function seedRoles(conn) {
+  await conn.query(`INSERT IGNORE INTO roles (id, name, description) VALUES (1, 'Administrador', 'Acesso completo')`);
+  await conn.query(`INSERT IGNORE INTO roles (id, name, description) VALUES (2, 'Nutrição', 'Cardápio, fichas, consumo, estoque, relatórios')`);
+  await conn.query(`INSERT IGNORE INTO roles (id, name, description) VALUES (3, 'Cantina', 'Estoque, entrada, saída, consumo, scanner')`);
+  await conn.query(`INSERT IGNORE INTO roles (id, name, description) VALUES (4, 'Direção', 'Dashboard, financeiro, relatórios, indicadores')`);
 }
 
 const PERM_MATRIX = {
@@ -60,30 +60,32 @@ const PERM_MATRIX = {
   sobras: [[1,1,1,1],[1,1,1,0],[1,1,0,0],[1,0,0,0]],
 };
 
-function seedPermissions() {
+async function seedPermissions(conn) {
   for (const [module, matrix] of Object.entries(PERM_MATRIX)) {
-    matrix.forEach((perm, idx) => {
+    for (let idx = 0; idx < matrix.length; idx++) {
+      const perm = matrix[idx];
       const roleId = idx + 1;
-      run(
-        `INSERT OR IGNORE INTO permissions (role_id, module, can_view, can_create, can_edit, can_delete)
+      await conn.query(
+        `INSERT IGNORE INTO permissions (role_id, module, can_view, can_create, can_edit, can_delete)
          VALUES (?,?,?,?,?,?)`,
         [roleId, module, perm[0], perm[1], perm[2], perm[3]]
       );
-    });
+    }
   }
 }
 
-function seedUsers() {
+async function seedUsers(conn) {
   const adminPass = hashPassword('admin123');
-  run(`INSERT OR IGNORE INTO users (id, name, email, password_hash, role_id, active) VALUES (1, 'Administrador', 'admin@escola.edu.br', ?, 1, 1)`, [adminPass]);
-  run(`INSERT OR IGNORE INTO users (id, name, email, password_hash, role_id, active) VALUES (2, 'Maria Nutrição', 'nutricao@escola.edu.br', ?, 2, 1)`, [hashPassword('nutricao123')]);
-  run(`INSERT OR IGNORE INTO users (id, name, email, password_hash, role_id, active) VALUES (3, 'João Cantina', 'cantina@escola.edu.br', ?, 3, 1)`, [hashPassword('cantina123')]);
-  run(`INSERT OR IGNORE INTO users (id, name, email, password_hash, role_id, active) VALUES (4, 'Diretor Carlos', 'direcao@escola.edu.br', ?, 4, 1)`, [hashPassword('direcao123')]);
+  await conn.query(`INSERT IGNORE INTO users (id, name, email, password_hash, role_id, active) VALUES (1, 'Administrador', 'admin@escola.edu.br', ?, 1, 1)`, [adminPass]);
+  await conn.query(`INSERT IGNORE INTO users (id, name, email, password_hash, role_id, active) VALUES (2, 'Maria Nutrição', 'nutricao@escola.edu.br', ?, 2, 1)`, [hashPassword('nutricao123')]);
+  await conn.query(`INSERT IGNORE INTO users (id, name, email, password_hash, role_id, active) VALUES (3, 'João Cantina', 'cantina@escola.edu.br', ?, 3, 1)`, [hashPassword('cantina123')]);
+  await conn.query(`INSERT IGNORE INTO users (id, name, email, password_hash, role_id, active) VALUES (4, 'Diretor Carlos', 'direcao@escola.edu.br', ?, 4, 1)`, [hashPassword('direcao123')]);
 }
 
-function seedSchool() {
-  run(`INSERT OR IGNORE INTO school_profile (id, name, address, city, state, cnpj, phone, email, school_year)
-       VALUES (1, 'EMEIEF Pequeno Saber', 'Rua das Flores, 123', 'São Paulo', 'SP', '12.345.678/0001-90', '(11) 4002-8922', 'contato@escola.edu.br', ?)`, [YEAR]);
+async function seedSchool(conn) {
+  await conn.query(`INSERT INTO school_profile (id, name, address, city, state, cnpj, phone, email, school_year)
+       VALUES (1, 'EMEIEF Pequeno Saber', 'Rua das Flores, 123', 'São Paulo', 'SP', '12.345.678/0001-90', '(11) 4002-8922', 'contato@escola.edu.br', ?)
+       ON DUPLICATE KEY UPDATE name = VALUES(name)`, [YEAR]);
 
   const shifts = [
     ['manha', 350, 350],
@@ -91,12 +93,13 @@ function seedSchool() {
     ['integral', 120, 300],
   ];
   for (const [shift, total, meals] of shifts) {
-    run(`INSERT OR IGNORE INTO students_summary (school_year, shift, total_students, estimated_meals_per_day)
-         VALUES (?,?,?,?)`, [YEAR, shift, total, meals]);
+    await conn.query(`INSERT INTO students_summary (school_year, shift, total_students, estimated_meals_per_day)
+         VALUES (?,?,?,?)
+         ON DUPLICATE KEY UPDATE total_students = VALUES(total_students), estimated_meals_per_day = VALUES(estimated_meals_per_day)`, [YEAR, shift, total, meals]);
   }
 }
 
-function seedCalendar() {
+async function seedCalendar(conn) {
   // Gera o calendário do ano: letivo de fev a dez, com férias em janeiro e julho,
   // recessos e feriados nacionais.
   const holidays = [
@@ -122,7 +125,8 @@ function seedCalendar() {
     if ((md >= '02-16' && md <= '02-18')) { dayType = 'recesso'; desc = 'Recesso de carnaval'; }
 
     if (dayType === 'letivo' || dayType === 'feriado' || dayType === 'recesso') {
-      run(`INSERT OR IGNORE INTO school_calendar (school_year, date, day_type, description) VALUES (?,?,?,?)`,
+      await conn.query(`INSERT INTO school_calendar (school_year, date, day_type, description) VALUES (?,?,?,?)
+         ON DUPLICATE KEY UPDATE day_type = VALUES(day_type), description = VALUES(description)`,
         [YEAR, ds, dayType, desc]);
       inserted++;
     }
@@ -131,15 +135,17 @@ function seedCalendar() {
   return inserted;
 }
 
-function seedCategories() {
+async function seedCategories(conn) {
   const cats = [
     'Cereais', 'Carnes', 'Frutas', 'Verduras', 'Legumes', 'Laticínios',
     'Bebidas', 'Temperos', 'Massas', 'Enlatados', 'Outros',
   ];
-  cats.forEach((c, i) => run(`INSERT OR IGNORE INTO food_categories (id, name) VALUES (?,?)`, [i + 1, c]));
+  for (let i = 0; i < cats.length; i++) {
+    await conn.query(`INSERT IGNORE INTO food_categories (id, name) VALUES (?,?)`, [i + 1, cats[i]]);
+  }
 }
 
-function seedFoods() {
+async function seedFoods(conn) {
   const foods = [
     ['Arroz branco', 1, 'kg', '7891000100103', 'Tio João', 'Despensa A1', 6.5, 20, 80],
     ['Feijão carioca', 1, 'kg', '7891000100202', 'Camil', 'Despensa A2', 8.2, 15, 60],
@@ -164,13 +170,14 @@ function seedFoods() {
     ['Molho de tomate', 10, 'un', '7891000102107', 'Pomarola', 'Despensa C3', 3.5, 20, 60],
     ['Gás de cozinha', 11, 'un', '7891000102206', 'Ultragaz', 'Depósito', 110.0, 1, 3],
   ];
-  foods.forEach((f, i) => {
-    run(`INSERT OR IGNORE INTO foods (id, name, category_id, unit, barcode, brand, storage_location, avg_price, min_stock, ideal_stock)
+  for (let i = 0; i < foods.length; i++) {
+    const f = foods[i];
+    await conn.query(`INSERT IGNORE INTO foods (id, name, category_id, unit, barcode, brand, storage_location, avg_price, min_stock, ideal_stock)
          VALUES (?,?,?,?,?,?,?,?,?,?)`, [i + 1, ...f]);
-  });
+  }
 }
 
-function seedSuppliers() {
+async function seedSuppliers(conn) {
   const suppliers = [
     ['CEAGESP', '00.000.000/0001-01', '(11) 3311-4000', 'compras@ceagesp.gov.br', 'Av. Miguel Estéfano, 4000 — SP', 'Frutas, verduras, legumes'],
     ['Distribuidora Alimentar São Paulo', '11.222.333/0001-44', '(11) 2233-4455', 'vendas@distalim.com.br', 'Rua dos Cereais, 500 — Guarulhos', 'Cereais, massas, enlatados, temperos'],
@@ -179,13 +186,14 @@ function seedSuppliers() {
     ['Panificadora Pão Dourado', '44.555.666/0001-77', '(11) 5566-7788', 'pao@paodourado.com.br', 'Rua do Pão, 15 — SP', 'Pães, biscoitos'],
     ['Ultragaz', '55.666.777/0001-88', '(11) 4002-5300', 'comercial@ultragaz.com.br', 'Av. do Gás, 1000 — SP', 'Gás de cozinha'],
   ];
-  suppliers.forEach((s, i) => {
-    run(`INSERT OR IGNORE INTO suppliers (id, name, cnpj, phone, email, address, products_supplied)
+  for (let i = 0; i < suppliers.length; i++) {
+    const s = suppliers[i];
+    await conn.query(`INSERT IGNORE INTO suppliers (id, name, cnpj, phone, email, address, products_supplied)
          VALUES (?,?,?,?,?,?,?)`, [i + 1, ...s]);
-  });
+  }
 }
 
-function seedBatchesAndStock() {
+async function seedBatchesAndStock(conn) {
   // Define estoque inicial com alguns itens baixos, alguns vencendo e um vencido
   const batches = [
     // foodId, lote, quantidade, entrada(dias atrás), validade(dias à frente), supplierId, custo unit
@@ -217,23 +225,24 @@ function seedBatchesAndStock() {
     [22, 'L2026-GA01', 2, 10, 0, 6, 108.0], // vence hoje
   ];
 
-  batches.forEach((b, i) => {
-    const [foodId, batch, qty, daysAgo, daysFwd, sup, cost] = b;
+  for (let i = 0; i < batches.length; i++) {
+    const [foodId, batch, qty, daysAgo, daysFwd, sup, cost] = batches[i];
     const entry = addDays(NOW, -daysAgo);
     const expiry = addDays(NOW, daysFwd);
-    run(`INSERT OR IGNORE INTO food_batches (id, food_id, batch_number, quantity, entry_date, expiry_date, supplier_id, cost, unit_cost)
+    await conn.query(`INSERT IGNORE INTO food_batches (id, food_id, batch_number, quantity, entry_date, expiry_date, supplier_id, cost, unit_cost)
          VALUES (?,?,?,?,?,?,?,?,?)`, [i + 1, foodId, batch, qty, entry, expiry, sup, round1(qty * cost), cost]);
     // atualiza/insere stock
-    const st = get('SELECT id FROM stock WHERE food_id = ?', [foodId]);
+    const stRes = await conn.query('SELECT id FROM stock WHERE food_id = ?', [foodId]);
+    const st = stRes[0][0];
     if (st) {
-      run('UPDATE stock SET quantity = quantity + ? WHERE food_id = ?', [qty, foodId]);
+      await conn.query('UPDATE stock SET quantity = quantity + ? WHERE food_id = ?', [qty, foodId]);
     } else {
-      run('INSERT INTO stock (food_id, quantity) VALUES (?,?)', [foodId, qty]);
+      await conn.query('INSERT INTO stock (food_id, quantity) VALUES (?,?)', [foodId, qty]);
     }
-  });
+  }
 }
 
-function seedRecipes() {
+async function seedRecipes(conn) {
   const recipes = [
     { id: 1, name: 'Arroz com frango', mealType: 2, servings: 100, instructions: 'Tempere o frango com alho, cebola e sal. Refogue o arroz no óleo com cebola, adicione água e cozinhe. Prepare o frango em forno ou panela. Sirva com arroz.', observations: 'Rendimento aproximado para 100 porções de 250g.' },
     { id: 2, name: 'Feijão temperado', mealType: 2, servings: 100, instructions: 'Deixe o feijão de molho, cozinhe na panela de pressão com cebola, alho e sal.', observations: '' },
@@ -242,7 +251,7 @@ function seedRecipes() {
     { id: 5, name: 'Lanche da tarde: pão com suco', mealType: 3, servings: 100, instructions: 'Distribua pão de forma com suco de laranja.', observations: '' },
   ];
   for (const r of recipes) {
-    run(`INSERT OR IGNORE INTO recipes (id, name, meal_type_id, servings, yield_amount, yield_unit, instructions, observations)
+    await conn.query(`INSERT IGNORE INTO recipes (id, name, meal_type_id, servings, yield_amount, yield_unit, instructions, observations)
          VALUES (?,?,?,?,?,?,?,?)`, [r.id, r.name, r.mealType, r.servings, r.servings, 'porções', r.instructions, r.observations]);
   }
 
@@ -267,22 +276,22 @@ function seedRecipes() {
     [5, 12, 1, 'un'],    // pão (1 un por pessoa)
     [5, 14, 0.25, 'L'],  // suco
   ];
-  ing.forEach((r, i) => {
-    run(`INSERT OR IGNORE INTO recipe_ingredients (id, recipe_id, food_id, quantity_per_serving, unit)
+  for (let i = 0; i < ing.length; i++) {
+    const r = ing[i];
+    await conn.query(`INSERT IGNORE INTO recipe_ingredients (id, recipe_id, food_id, quantity_per_serving, unit)
          VALUES (?,?,?,?,?)`, [i + 1, ...r]);
-  });
+  }
 }
 
-function seedMealTypes() {
-  run(`INSERT OR IGNORE INTO meal_types (id, name, description) VALUES (1, 'Lanche da manhã', 'Lanche servido no período da manhã')`);
-  run(`INSERT OR IGNORE INTO meal_types (id, name, description) VALUES (2, 'Almoço', 'Refeição principal')`);
-  run(`INSERT OR IGNORE INTO meal_types (id, name, description) VALUES (3, 'Lanche da tarde', 'Lanche servido no período da tarde')`);
-  run(`INSERT OR IGNORE INTO meal_types (id, name, description) VALUES (4, 'Jantar', 'Refeição da noite — integral')`);
+async function seedMealTypes(conn) {
+  await conn.query(`INSERT IGNORE INTO meal_types (id, name, description) VALUES (1, 'Lanche da manhã', 'Lanche servido no período da manhã')`);
+  await conn.query(`INSERT IGNORE INTO meal_types (id, name, description) VALUES (2, 'Almoço', 'Refeição principal')`);
+  await conn.query(`INSERT IGNORE INTO meal_types (id, name, description) VALUES (3, 'Lanche da tarde', 'Lanche servido no período da tarde')`);
+  await conn.query(`INSERT IGNORE INTO meal_types (id, name, description) VALUES (4, 'Jantar', 'Refeição da noite — integral')`);
 }
 
-function seedMenus() {
+async function seedMenus(conn) {
   // Cardápio: próximos 20 dias letivos (ignora fins de semana)
-  // Cada dia: lanche manhã (banana+leite), almoço (arroz+frango+salada), lanche tarde (pão+suco)
   const students = 750;
   let menuId = 0;
   let itemId = 0;
@@ -290,7 +299,6 @@ function seedMenus() {
     const d = addDays(NOW, i);
     const dow = new Date(`${d}T00:00:00`).getDay();
     if (dow === 0 || dow === 6) continue;
-    // 3 refeições por dia
     const meals = [
       { mt: 1, title: 'Lanche da manhã', items: [[5, 0.12, 'kg', 750], [10, 0.2, 'L', 750]] },
       { mt: 2, title: 'Almoço', items: [[1, 0.1, 'kg', 750], [2, 0.05, 'kg', 750], [3, 0.1, 'kg', 750], [7, 0.03, 'kg', 750], [8, 0.04, 'kg', 750], [9, 0.03, 'kg', 750]] },
@@ -299,20 +307,19 @@ function seedMenus() {
     for (const m of meals) {
       menuId++;
       const totalQty = m.items.reduce((acc, it) => acc + (it[1] * it[3] * (it[2] === 'kg' || it[2] === 'L' ? 1 : 1)), 0);
-      run(`INSERT INTO menus (id, date, meal_type_id, title, expected_students, status, planned_cost, created_by)
+      await conn.query(`INSERT INTO menus (id, date, meal_type_id, title, expected_students, status, planned_cost, created_by)
            VALUES (?,?,?,?,?,'planejado',?,1)`, [menuId, d, m.mt, m.title, students, round1(totalQty * 8)]);
       for (const it of m.items) {
         itemId++;
-        run(`INSERT INTO menu_items (id, menu_id, food_id, portion_per_student, total_quantity)
+        await conn.query(`INSERT INTO menu_items (id, menu_id, food_id, portion_per_student, total_quantity)
              VALUES (?,?,?,?,?)`, [itemId, menuId, it[0], it[1], round1(it[1] * it[3])]);
       }
     }
   }
 }
 
-function seedMealsAndConsumption() {
+async function seedMealsAndConsumption(conn) {
   // Gera refeições realizadas nos últimos 6 meses com consumo real (FEFO)
-  // e registra movimentações de saída.
   const mealTypes = [1, 2, 3];
   const students = 750;
   let mealId = 0;
@@ -329,28 +336,28 @@ function seedMealsAndConsumption() {
     const d = addDays(NOW, -back);
     const dow = new Date(`${d}T00:00:00`).getDay();
     if (dow === 0 || dow === 6) continue;
-    // aproximadamente 20% dos dias letivos no passado sem refeição (falta/imprevisto)
     if (back > 0 && rnd() < 0.15) continue;
 
     for (const mt of mealTypes) {
       const served = mt === 1 ? between(320, 360) : between(380, 420);
       mealId++;
-      run(`INSERT INTO meals (id, menu_id, meal_type_id, date, planned_students, served_students, recipe_id, status, registered_by)
+      await conn.query(`INSERT INTO meals (id, menu_id, meal_type_id, date, planned_students, served_students, recipe_id, status, registered_by)
            VALUES (?,NULL,?,?,?,?,?, 'realizado', 3)`, [mealId, mt, d, students, served, mt === 2 ? 1 : mt === 1 ? 4 : 5]);
       const ing = ingByType[mt];
       for (const it of ing) {
         consId++;
         const qty = round1(it[1] * served * (it[2] === 'L' ? 1 : 1));
-        run(`INSERT INTO meal_consumption (id, meal_id, food_id, quantity, unit, planned_quantity)
+        await conn.query(`INSERT INTO meal_consumption (id, meal_id, food_id, quantity, unit, planned_quantity)
              VALUES (?,?,?,?,?,?)`, [consId, mealId, it[0], qty, it[2], round1(it[1] * students)]);
         movId++;
-        run(`INSERT INTO stock_movements (food_id, movement_type, reason, quantity, reference_type, reference_id, responsible)
+        await conn.query(`INSERT INTO stock_movements (food_id, movement_type, reason, quantity, reference_type, reference_id, responsible)
              VALUES (?,'saida','refeicao',?, 'meal', ?, 'João Cantina')`, [it[0], qty, mealId]);
-        run('UPDATE stock SET quantity = MAX(0, quantity - ?) WHERE food_id = ?', [qty, it[0]]);
+        await conn.query('UPDATE stock SET quantity = GREATEST(0, quantity - ?) WHERE food_id = ?', [qty, it[0]]);
         // debita lotes FEFO
-        const batch = get('SELECT * FROM food_batches WHERE food_id = ? AND quantity > 0 ORDER BY expiry_date LIMIT 1', [it[0]]);
+        const batchRes = await conn.query('SELECT * FROM food_batches WHERE food_id = ? AND quantity > 0 ORDER BY expiry_date LIMIT 1', [it[0]]);
+        const batch = batchRes[0][0];
         if (batch) {
-          run('UPDATE food_batches SET quantity = MAX(0, quantity - ?) WHERE id = ?', [qty, batch.id]);
+          await conn.query('UPDATE food_batches SET quantity = GREATEST(0, quantity - ?) WHERE id = ?', [qty, batch.id]);
         }
       }
     }
@@ -365,12 +372,12 @@ function seedMealsAndConsumption() {
     const served = between(350, 395);
     const remaining = prepared - served;
     const discarded = between(0, Math.round(remaining * 0.5));
-    run(`INSERT INTO leftovers (date, meal_type_id, prepared_quantity, served_quantity, remaining_quantity, discarded_quantity)
+    await conn.query(`INSERT INTO leftovers (date, meal_type_id, prepared_quantity, served_quantity, remaining_quantity, discarded_quantity)
          VALUES (?,2,?,?,?,?)`, [d, prepared, served, remaining, discarded]);
   }
 }
 
-function seedWaste() {
+async function seedWaste(conn) {
   // Registros de desperdício nos últimos 6 meses
   const reasons = ['excesso_producao', 'vencimento', 'preparo', 'armazenamento', 'sobras', 'danificado'];
   const foods = [1, 2, 3, 5, 7, 8, 9, 12, 14];
@@ -378,30 +385,31 @@ function seedWaste() {
     const d = addDays(NOW, -back);
     const foodId = foods[between(0, foods.length - 1)];
     const qty = round1(between(1, 15));
-    const avg = get('SELECT avg_price FROM foods WHERE id = ?', [foodId]).avg_price || 5;
-    run(`INSERT INTO waste (food_id, quantity, unit, reason, date, estimated_cost, responsible, notes)
+    const avgRes = await conn.query('SELECT avg_price FROM foods WHERE id = ?', [foodId]);
+    const avgRow = avgRes[0][0];
+    const avg = avgRow ? avgRow.avg_price : 5;
+    await conn.query(`INSERT INTO waste (food_id, quantity, unit, reason, date, estimated_cost, responsible, notes)
          VALUES (?,?, 'kg', ?, ?, ?, 'João Cantina', 'Registro de sobra/perda')`,
       [foodId, qty, reasons[between(0, reasons.length - 1)], d, round1(qty * avg)]);
   }
 }
 
-function seedExpenses() {
+async function seedExpenses(conn) {
   // Despesas mensais dos últimos 12 meses + categorias
-  run(`INSERT OR IGNORE INTO expense_categories (id, name) VALUES (1,'Alimentos')`);
-  run(`INSERT OR IGNORE INTO expense_categories (id, name) VALUES (2,'Bebidas')`);
-  run(`INSERT OR IGNORE INTO expense_categories (id, name) VALUES (3,'Gás')`);
-  run(`INSERT OR IGNORE INTO expense_categories (id, name) VALUES (4,'Materiais de cozinha')`);
-  run(`INSERT OR IGNORE INTO expense_categories (id, name) VALUES (5,'Produtos de limpeza')`);
-  run(`INSERT OR IGNORE INTO expense_categories (id, name) VALUES (6,'Equipamentos')`);
-  run(`INSERT OR IGNORE INTO expense_categories (id, name) VALUES (7,'Transporte')`);
-  run(`INSERT OR IGNORE INTO expense_categories (id, name) VALUES (8,'Outros')`);
+  await conn.query(`INSERT IGNORE INTO expense_categories (id, name) VALUES (1,'Alimentos')`);
+  await conn.query(`INSERT IGNORE INTO expense_categories (id, name) VALUES (2,'Bebidas')`);
+  await conn.query(`INSERT IGNORE INTO expense_categories (id, name) VALUES (3,'Gás')`);
+  await conn.query(`INSERT IGNORE INTO expense_categories (id, name) VALUES (4,'Materiais de cozinha')`);
+  await conn.query(`INSERT IGNORE INTO expense_categories (id, name) VALUES (5,'Produtos de limpeza')`);
+  await conn.query(`INSERT IGNORE INTO expense_categories (id, name) VALUES (6,'Equipamentos')`);
+  await conn.query(`INSERT IGNORE INTO expense_categories (id, name) VALUES (7,'Transporte')`);
+  await conn.query(`INSERT IGNORE INTO expense_categories (id, name) VALUES (8,'Outros')`);
 
   let expId = 0;
   for (let m = 11; m >= 0; m--) {
     const d = new Date();
     d.setMonth(d.getMonth() - m);
     const monthPrefix = d.toISOString().slice(0, 7);
-    // 4-6 despesas por mês
     const n = between(4, 6);
     for (let i = 0; i < n; i++) {
       const day = between(1, 27);
@@ -413,19 +421,19 @@ function seedExpenses() {
       ][cat - 1];
       const amount = cat === 1 ? between(3000, 9000) : cat === 2 ? between(300, 900) : cat === 3 ? between(110, 330) : between(50, 600);
       expId++;
-      run(`INSERT INTO expenses (id, category_id, description, amount, expense_date, payment_method, responsible)
+      await conn.query(`INSERT INTO expenses (id, category_id, description, amount, expense_date, payment_method, responsible)
            VALUES (?,?,?,?,?, 'transferencia', 'Financeiro')`, [expId, cat, desc, amount, date]);
     }
   }
 }
 
-function seedBudgets() {
+async function seedBudgets(conn) {
   // Orçamento anual e mensal
-  run(`INSERT OR IGNORE INTO budgets (school_year, period, period_value, amount, notes)
+  await conn.query(`INSERT IGNORE INTO budgets (school_year, period, period_value, amount, notes)
        VALUES (?, 'ano', ?, 100000, 'Orçamento anual da alimentação escolar')`, [YEAR, String(YEAR)]);
   for (let m = 1; m <= 12; m++) {
     const pv = `${YEAR}-${String(m).padStart(2, '0')}`;
-    run(`INSERT OR IGNORE INTO budgets (school_year, period, period_value, amount, notes)
+    await conn.query(`INSERT IGNORE INTO budgets (school_year, period, period_value, amount, notes)
          VALUES (?, 'mes', ?, ?, 'Orçamento mensal')`, [YEAR, pv, 8300]);
   }
   // Limites por categoria
@@ -435,12 +443,12 @@ function seedBudgets() {
     [6, 4000, 'Equipamentos'], [7, 3000, 'Transporte'], [8, 2000, 'Outros'],
   ];
   for (const [catId, amount] of cats) {
-    run(`INSERT OR IGNORE INTO budgets (school_year, period, period_value, amount, notes)
+    await conn.query(`INSERT IGNORE INTO budgets (school_year, period, period_value, amount, notes)
          VALUES (?, 'categoria', ?, ?, 'Limite por categoria')`, [YEAR, String(catId), amount]);
   }
 }
 
-function seedPurchases() {
+async function seedPurchases(conn) {
   // Compras dos últimos 12 meses, com itens
   let purId = 0;
   let itemId = 0;
@@ -461,19 +469,19 @@ function seedPurchases() {
         const t = round1(qty * cost);
         total += t;
       }
-      run(`INSERT INTO purchases (id, supplier_id, purchase_date, invoice_number, total, status, responsible)
+      await conn.query(`INSERT INTO purchases (id, supplier_id, purchase_date, invoice_number, total, status, responsible)
            VALUES (?,?,?,?,?, 'concluida', 'Financeiro')`, [purId, sup, date, `NF-${purId}`, round1(total)]);
       for (const [fid, qty, cost] of chosen) {
         itemId++;
         const t = round1(qty * cost);
-        run(`INSERT INTO purchase_items (id, purchase_id, food_id, quantity, unit_cost, total)
+        await conn.query(`INSERT INTO purchase_items (id, purchase_id, food_id, quantity, unit_cost, total)
              VALUES (?,?,?,?,?,?)`, [itemId, purId, fid, qty, cost, t]);
       }
     }
   }
 }
 
-function seedRecentPurchase() {
+async function seedRecentPurchase(conn) {
   // Compra recente repõe o estoque até o nível ideal para que o sistema
   // abra com estoque saudável e lotes com validade futura (demonstração FEFO).
   const NOW2 = addDays(NOW, -2);
@@ -495,105 +503,129 @@ function seedRecentPurchase() {
 
   const items = [];
   for (const [foodId, qty, lot, validDays] of perfis) {
-    const food = get('SELECT * FROM foods WHERE id = ?', [foodId]);
+    const foodRes = await conn.query('SELECT * FROM foods WHERE id = ?', [foodId]);
+    const food = foodRes[0][0];
     if (!food) continue;
-    const st = get('SELECT quantity FROM stock WHERE food_id = ?', [foodId]);
-    const current = st ? st.quantity : 0;
+    const stRes = await conn.query('SELECT quantity FROM stock WHERE food_id = ?', [foodId]);
+    const st = stRes[0][0];
+    const current = st ? Number(st.quantity) : 0;
     // só compra se estiver abaixo do ideal
-    const need = Math.max(0, food.ideal_stock - current);
+    const need = Math.max(0, Number(food.ideal_stock) - current);
     if (need <= 0) continue;
     const q = Math.min(need, qty);
-    items.push({ food, q: q, lot, validDays });
+    items.push({ food, q, lot, validDays });
   }
 
   if (!items.length) return;
 
   const purchaseDate = NOW2;
   const supplierId = 2;
-  run(`INSERT INTO purchases (supplier_id, purchase_date, invoice_number, total, status, responsible)
+  await conn.query(`INSERT INTO purchases (supplier_id, purchase_date, invoice_number, total, status, responsible)
        VALUES (?,?,?,0,'concluida','Financeiro')`, [supplierId, purchaseDate, 'NF-REC-001']);
-  const purchaseId = get('SELECT last_insert_rowid() AS id').id;
+  const purchaseId = await lastId(conn);
 
   for (const it of items) {
-    const itemTotal = round1(it.q * it.food.avg_price);
-    run(`INSERT INTO purchase_items (purchase_id, food_id, quantity, unit_cost, total)
-         VALUES (?,?,?,?,?)`, [purchaseId, it.food.id, it.q, it.food.avg_price, itemTotal]);
+    const itemTotal = round1(it.q * Number(it.food.avg_price));
+    await conn.query(`INSERT INTO purchase_items (purchase_id, food_id, quantity, unit_cost, total)
+         VALUES (?,?,?,?,?)`, [purchaseId, it.food.id, it.q, Number(it.food.avg_price), itemTotal]);
     const expiry = addDays(NOW, it.validDays);
-    run(`INSERT INTO food_batches (food_id, batch_number, quantity, entry_date, expiry_date, supplier_id, cost, unit_cost)
+    await conn.query(`INSERT INTO food_batches (food_id, batch_number, quantity, entry_date, expiry_date, supplier_id, cost, unit_cost)
          VALUES (?,?,?,?,?,?,?,?)`,
-      [it.food.id, it.lot, it.q, purchaseDate, expiry, supplierId, itemTotal, it.food.avg_price]);
-    const batchId = get('SELECT last_insert_rowid() AS id').id;
-    const st = get('SELECT id FROM stock WHERE food_id = ?', [it.food.id]);
-    if (st) run('UPDATE stock SET quantity = quantity + ? WHERE food_id = ?', [it.q, it.food.id]);
-    else run('INSERT INTO stock (food_id, quantity) VALUES (?,?)', [it.food.id, it.q]);
-    run(`INSERT INTO stock_movements (food_id, batch_id, movement_type, reason, quantity, unit_cost, total_cost, reference_type, reference_id, responsible)
+      [it.food.id, it.lot, it.q, purchaseDate, expiry, supplierId, itemTotal, Number(it.food.avg_price)]);
+    const batchId = await lastId(conn);
+    const stRes = await conn.query('SELECT id FROM stock WHERE food_id = ?', [it.food.id]);
+    const st = stRes[0][0];
+    if (st) await conn.query('UPDATE stock SET quantity = quantity + ? WHERE food_id = ?', [it.q, it.food.id]);
+    else await conn.query('INSERT INTO stock (food_id, quantity) VALUES (?,?)', [it.food.id, it.q]);
+    await conn.query(`INSERT INTO stock_movements (food_id, batch_id, movement_type, reason, quantity, unit_cost, total_cost, reference_type, reference_id, responsible)
          VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [it.food.id, batchId, 'entrada', 'compra', it.q, it.food.avg_price, itemTotal, 'purchase', purchaseId, 'Financeiro']);
+      [it.food.id, batchId, 'entrada', 'compra', it.q, Number(it.food.avg_price), itemTotal, 'purchase', purchaseId, 'Financeiro']);
   }
-  run('UPDATE purchases SET total = ? WHERE id = ?', [items.reduce((a, b) => a + round1(b.q * b.food.avg_price), 0), purchaseId]);
+  await conn.query('UPDATE purchases SET total = ? WHERE id = ?', [items.reduce((a, b) => a + round1(b.q * Number(b.food.avg_price)), 0), purchaseId]);
 }
 
-function seedNotifications() {
+async function seedNotifications(conn) {
   // Verifica estoques baixos e validades para gerar alertas reais
-  const low = query(`
+  const low = await conn.query(`
     SELECT f.id, f.name, f.min_stock, s.quantity FROM stock s JOIN foods f ON f.id = s.food_id
     WHERE s.quantity <= f.min_stock ORDER BY (s.quantity / f.min_stock) LIMIT 8
   `);
-  for (const r of low) {
-    run(`INSERT INTO notifications (type, severity, title, message, reference_type, reference_id)
-         VALUES ('estoque','warning', 'Estoque abaixo do mínimo', '${r.name}: estoque de ${r.quantity} (mínimo ${r.min_stock}).', 'food', ?)`, [r.id]);
+  for (const r of low[0]) {
+    await conn.query(`INSERT INTO notifications (type, severity, title, message, reference_type, reference_id)
+         VALUES ('estoque','warning', 'Estoque abaixo do mínimo', ?, 'food', ?)`, [`${r.name}: estoque de ${r.quantity} (mínimo ${r.min_stock}).`, r.id]);
   }
 }
 
 export async function seedAll({ force = false } = {}) {
-  const count = get('SELECT COUNT(*) AS c FROM users').c;
+  const countRow = await get('SELECT COUNT(*) AS c FROM users');
+  const count = countRow ? countRow.c : 0;
   if (count > 0 && !force) {
     console.log('Banco já populado. Use --force para recriar.');
     return;
   }
-  if (force) {
-    db.exec(`
-      DROP TABLE IF EXISTS ai_conversations; DROP TABLE IF EXISTS audit_logs;
-      DROP TABLE IF EXISTS notifications; DROP TABLE IF EXISTS leftovers;
-      DROP TABLE IF EXISTS waste; DROP TABLE IF EXISTS meal_consumption;
-      DROP TABLE IF EXISTS meals; DROP TABLE IF EXISTS menu_items;
-      DROP TABLE IF EXISTS menus; DROP TABLE IF EXISTS recipe_ingredients;
-      DROP TABLE IF EXISTS recipes; DROP TABLE IF EXISTS shopping_list;
-      DROP TABLE IF EXISTS purchase_items; DROP TABLE IF EXISTS purchases;
-      DROP TABLE IF EXISTS supplier_prices; DROP TABLE IF EXISTS suppliers;
-      DROP TABLE IF EXISTS food_batches; DROP TABLE IF EXISTS stock_movements;
-      DROP TABLE IF EXISTS stock; DROP TABLE IF EXISTS foods;
-      DROP TABLE IF EXISTS food_categories; DROP TABLE IF EXISTS budgets;
-      DROP TABLE IF EXISTS expenses; DROP TABLE IF EXISTS expense_categories;
-      DROP TABLE IF EXISTS school_calendar; DROP TABLE IF EXISTS students_summary;
-      DROP TABLE IF EXISTS school_profile; DROP TABLE IF EXISTS permissions;
-      DROP TABLE IF EXISTS users; DROP TABLE IF EXISTS roles; DROP TABLE IF EXISTS meal_types;
-    `);
-    // Recria o schema
-    const { readFileSync } = await import('node:fs');
-    const schema = readFileSync(new URL('./schema.sql', import.meta.url), 'utf-8');
-    db.exec(schema);
-  }
-  transaction(() => {
-    seedRoles();
-    seedPermissions();
-    seedUsers();
-    seedSchool();
-    seedCalendar();
-    seedCategories();
-    seedFoods();
-    seedSuppliers();
-    seedBatchesAndStock();
-    seedMealTypes();
-    seedRecipes();
-    seedMenus();
-    seedMealsAndConsumption();
-    seedWaste();
-    seedExpenses();
-    seedBudgets();
-    seedPurchases();
-    seedRecentPurchase();
-    seedNotifications();
+  await transaction(async (conn) => {
+    if (force) {
+      // Desliga FK checks temporariamente para DROP
+      await conn.query('SET FOREIGN_KEY_CHECKS = 0');
+      await conn.query(`DROP TABLE IF EXISTS ai_conversations`);
+      await conn.query(`DROP TABLE IF EXISTS audit_logs`);
+      await conn.query(`DROP TABLE IF EXISTS notifications`);
+      await conn.query(`DROP TABLE IF EXISTS leftovers`);
+      await conn.query(`DROP TABLE IF EXISTS waste`);
+      await conn.query(`DROP TABLE IF EXISTS meal_consumption`);
+      await conn.query(`DROP TABLE IF EXISTS meals`);
+      await conn.query(`DROP TABLE IF EXISTS menu_items`);
+      await conn.query(`DROP TABLE IF EXISTS menus`);
+      await conn.query(`DROP TABLE IF EXISTS recipe_ingredients`);
+      await conn.query(`DROP TABLE IF EXISTS recipes`);
+      await conn.query(`DROP TABLE IF EXISTS shopping_list`);
+      await conn.query(`DROP TABLE IF EXISTS purchase_items`);
+      await conn.query(`DROP TABLE IF EXISTS purchases`);
+      await conn.query(`DROP TABLE IF EXISTS supplier_prices`);
+      await conn.query(`DROP TABLE IF EXISTS suppliers`);
+      await conn.query(`DROP TABLE IF EXISTS food_batches`);
+      await conn.query(`DROP TABLE IF EXISTS stock_movements`);
+      await conn.query(`DROP TABLE IF EXISTS stock`);
+      await conn.query(`DROP TABLE IF EXISTS foods`);
+      await conn.query(`DROP TABLE IF EXISTS food_categories`);
+      await conn.query(`DROP TABLE IF EXISTS budgets`);
+      await conn.query(`DROP TABLE IF EXISTS expenses`);
+      await conn.query(`DROP TABLE IF EXISTS expense_categories`);
+      await conn.query(`DROP TABLE IF EXISTS school_calendar`);
+      await conn.query(`DROP TABLE IF EXISTS students_summary`);
+      await conn.query(`DROP TABLE IF EXISTS school_profile`);
+      await conn.query(`DROP TABLE IF EXISTS permissions`);
+      await conn.query(`DROP TABLE IF EXISTS users`);
+      await conn.query(`DROP TABLE IF EXISTS roles`);
+      await conn.query(`DROP TABLE IF EXISTS meal_types`);
+      await conn.query(`DROP TABLE IF EXISTS login_attempts`);
+      await conn.query('SET FOREIGN_KEY_CHECKS = 1');
+
+      // Recria o schema
+      const { readFileSync } = await import('node:fs');
+      const schema = readFileSync(new URL('./schema.sql', import.meta.url), 'utf-8');
+      await conn.query(schema);
+    }
+
+    await seedRoles(conn);
+    await seedPermissions(conn);
+    await seedUsers(conn);
+    await seedSchool(conn);
+    await seedCalendar(conn);
+    await seedCategories(conn);
+    await seedFoods(conn);
+    await seedSuppliers(conn);
+    await seedBatchesAndStock(conn);
+    await seedMealTypes(conn);
+    await seedRecipes(conn);
+    await seedMenus(conn);
+    await seedMealsAndConsumption(conn);
+    await seedWaste(conn);
+    await seedExpenses(conn);
+    await seedBudgets(conn);
+    await seedPurchases(conn);
+    await seedRecentPurchase(conn);
+    await seedNotifications(conn);
   });
   console.log('✅ Seed concluído! Dados de demonstração criados.');
   console.log('   Login admin: admin@escola.edu.br / admin123');
@@ -601,8 +633,10 @@ export async function seedAll({ force = false } = {}) {
 
 // Executa seed se chamado diretamente
 if (process.argv[1] && process.argv[1].endsWith('seed.js')) {
-  seedAll({ force: process.argv.includes('--force') });
+  seedAll({ force: process.argv.includes('--force') }).catch((e) => {
+    console.error('❌ Erro no seed:', e.message);
+    process.exit(1);
+  });
 }
 
 export default { seedAll };
-

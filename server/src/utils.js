@@ -185,12 +185,12 @@ export function isDateStr(value) {
 }
 
 // Gera datas letivas do ano baseado no calendário escolar
-export function getSchoolDays(db, year) {
-  const days = db.prepare(`
+export async function getSchoolDays(db, year) {
+  const days = await db.query(`
     SELECT date FROM school_calendar
     WHERE school_year = ? AND day_type = 'letivo'
     ORDER BY date
-  `).all(year);
+  `, [year]);
   return days.map((d) => d.date);
 }
 

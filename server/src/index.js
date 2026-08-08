@@ -1,9 +1,9 @@
- import express from 'express';
+import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import 'dotenv/config';
-import { db, run } from './db.js';
+import { run, initSchema } from './db.js';
 import { generateAll } from './services/notifications.js';
 
 // Rotas
@@ -116,23 +116,41 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Rota não encontrad
 // ---------- Tratamento de erros ----------
 app.use((err, req, res, next) => {
   console.error('Erro na API:', err.message || err);
-  if (err && err.code === 'ERR_SQLITE_ERROR') {
+  // Erros MySQL (duplicado, violação de FK, etc.)
+  if (err && typeof err.code === 'string' && err.code.startsWith('ER_DUP_ENTRY')) {
+    return res.status(400).json({ error: 'Registro duplicado.', detail: err.message });
+  }
+  if (err && typeof err.code === 'string' && err.code.startsWith('ER_')) {
     return res.status(400).json({ error: 'Erro no banco de dados.', detail: err.message });
   }
   res.status(err.status || 500).json({ error: err.message || 'Erro interno do servidor.', detail: err.detail || '' });
 });
 
-// ---------- Regenera alertas na inicialização (baseados na data atual) ----------
-try {
-  run('DELETE FROM notifications');
-  generateAll();
-  console.log('✅ Alertas de estoque e validade atualizados.');
-} catch (e) {
-  console.error('Erro ao gerar alertas:', e.message);
+// ---------- Inicialização (schema + alertas) ----------
+async function start() {
+  // Cria as tabelas caso não existam no MySQL
+  try {
+    await initSchema();
+    console.log('🗄️  Schema MySQL verificado/criado.');
+  } catch (e) {
+    console.error('Erro ao inicializar schema MySQL:', e.message);
+    process.exit(1);
+  }
+
+  // Regenera alertas na inicialização (baseados na data atual)
+  try {
+    await run('DELETE FROM notifications');
+    await generateAll();
+    console.log('✅ Alertas de estoque e validade atualizados.');
+  } catch (e) {
+    console.error('Erro ao gerar alertas:', e.message);
+  }
+
+  app.listen(PORT, () => {
+    console.log(`🚀 API da Alimentação Escolar rodando em http://localhost:${PORT}`);
+    console.log(`   Banco de dados: MySQL (Railway)`);
+  });
 }
 
-app.listen(PORT, () => {
-  console.log(`🚀 API da Alimentação Escolar rodando em http://localhost:${PORT}`);
-  console.log(`   Banco de dados: SQLite (${process.env.DB_PATH || './data/escola.db'})`);
-});
+start();
 

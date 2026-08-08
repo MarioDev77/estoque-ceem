@@ -9,7 +9,7 @@
 // Ou via variáveis de ambiente:
 //   ADMIN_EMAIL=admin@dominio.com ADMIN_PASSWORD=SenhaForte123 node src/reset.js
 // ============================================================
-import { db, run } from './db.js';
+import { transaction, run } from './db.js';
 import { hashPassword } from './auth.js';
 
 const email = process.argv[2] || process.env.ADMIN_EMAIL;
@@ -63,34 +63,33 @@ const TABLES_TO_CLEAR = [
 
 console.log('🧹 Limpando dados fictícios...');
 
-// Desliga a checagem de foreign keys durante a limpeza (precisa ser fora de uma
-// transação — o SQLite não permite mudar esse pragma dentro de BEGIN/COMMIT).
-// Isso evita falhas de ordem entre tabelas por causa de dados reais criados
-// depois do seed original (ex: uso real do sistema, tentativas de login, etc).
-db.exec('PRAGMA foreign_keys = OFF;');
-db.exec('BEGIN');
-try {
-  for (const table of TABLES_TO_CLEAR) {
-    run(`DELETE FROM ${table}`);
-    // Reinicia o autoincrement da tabela
-    run(`DELETE FROM sqlite_sequence WHERE name = ?`, [table]);
+(async () => {
+  try {
+    await transaction(async (conn) => {
+      // Desliga a checagem de foreign keys durante a limpeza
+      await conn.query('SET FOREIGN_KEY_CHECKS = 0');
+      for (const table of TABLES_TO_CLEAR) {
+        await conn.query(`DELETE FROM ${table}`);
+        // Reinicia o autoincrement (MySQL AUTO_INCREMENT)
+        try {
+          await conn.query(`ALTER TABLE ${table} AUTO_INCREMENT = 1`);
+        } catch (_) { }
+      }
+
+      // Cria o admin real (role_id 1 = Administrador, já existente em roles)
+      const passwordHash = hashPassword(password);
+      await conn.query(
+        `INSERT INTO users (name, email, password_hash, role_id, active) VALUES (?, ?, ?, 1, 1)`,
+        ['Administrador', email.toLowerCase().trim(), passwordHash]
+      );
+
+      await conn.query('SET FOREIGN_KEY_CHECKS = 1');
+    });
+  } catch (err) {
+    console.error('❌ Erro ao resetar banco:', err.message);
+    process.exit(1);
   }
 
-  // Cria o admin real (role_id 1 = Administrador, já existente em roles)
-  const passwordHash = hashPassword(password);
-  run(
-    `INSERT INTO users (name, email, password_hash, role_id, active) VALUES (?, ?, ?, 1, 1)`,
-    ['Administrador', email.toLowerCase().trim(), passwordHash]
-  );
-
-  db.exec('COMMIT');
-  db.exec('PRAGMA foreign_keys = ON;');
-} catch (err) {
-  db.exec('ROLLBACK');
-  db.exec('PRAGMA foreign_keys = ON;');
-  console.error('❌ Erro ao resetar banco:', err.message);
-  process.exit(1);
-}
-
-console.log('✅ Reset concluído! Todos os dados fictícios foram removidos.');
-console.log(`   Login admin: ${email} / (a senha que você definiu)`);
+  console.log('✅ Reset concluído! Todos os dados fictícios foram removidos.');
+  console.log(`   Login admin: ${email} / (a senha que você definiu)`);
+})();
