@@ -231,6 +231,7 @@ label small { font-weight: 400; }
 .login-brand { text-align: center; margin-bottom: 24px; }
 .login-brand h1 { font-size: 26px; margin: 10px 0 2px; color: var(--primary-dark); }
 .login-brand p { color: var(--text-muted); margin: 0; }
+.brand-logo { width: 96px; height: 96px; object-fit: contain; margin: 0 auto; display: block; }
 .login-form { display: flex; flex-direction: column; gap: 14px; }
 .login-hints { margin-top: 22px; padding: 14px; background: var(--bg); border-radius: 12px; font-size: 13px; }
 .login-hints p { margin: 0 0 4px; }
