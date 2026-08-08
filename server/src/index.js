@@ -23,6 +23,11 @@ import sistemaRoutes from './routes/sistema.js';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Railway (e a maioria dos PaaS) rodam a aplicação atrás de um proxy reverso,
+// que injeta o header X-Forwarded-For com o IP real do cliente.
+// Isso é necessário para o express-rate-limit identificar corretamente cada usuário.
+app.set('trust proxy', 1);
+
 // ---------- Segurança ----------
 // Remove banner de tecnologia (X-Powered-By) para não revelar o stack a scanners
 app.disable('x-powered-by');
