@@ -1,6 +1,7 @@
 -- ============================================================
 -- Sistema Web de Gestão da Alimentação Escolar
--- Banco de Dados MySQL — Schema Completo
+-- Banco de Dados MySQL — Schema Completo (CORRIGIDO)
+-- Fix: coluna reservada `read` na tabela notifications
 -- ============================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
@@ -392,6 +393,7 @@ CREATE TABLE IF NOT EXISTS budgets (
 -- ------------------------------------------------------------
 -- NOTIFICAÇÕES E ALERTAS
 -- ------------------------------------------------------------
+-- FIX: `read` é palavra reservada no MySQL — precisa de backticks
 CREATE TABLE IF NOT EXISTS notifications (
   id INT AUTO_INCREMENT PRIMARY KEY,
   type VARCHAR(30) NOT NULL,
@@ -400,9 +402,9 @@ CREATE TABLE IF NOT EXISTS notifications (
   message TEXT,
   reference_type VARCHAR(40),
   reference_id INT NULL,
-  read TINYINT NOT NULL DEFAULT 0,
+  `read` TINYINT NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  KEY idx_notifications_read (read)
+  KEY idx_notifications_read (`read`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
